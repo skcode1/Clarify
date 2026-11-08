@@ -4,7 +4,7 @@
 
 **Production-grade, zero-config AI image upscaler and enhancement engine for Python.**
 
-<p align="center">
+<!-- <p align="center">
   <a href="https://pypi.org/project/clarify-ai/">
     <img src="https://img.shields.io/pypi/v/clarify-ai?color=blue&style=flat-square" alt="PyPI Version">
   </a>
@@ -16,6 +16,14 @@
   <a href="https://mypy-lang.org/">
     <img src="https://img.shields.io/badge/mypy-checked-blue.svg?style=flat-square" alt="Mypy">
   </a>
+</p> -->
+
+<p align="center">
+  <img src="https://img.shields.io/badge/PyPI-Not%20Published-orange?style=flat-square" alt="PyPI Status">
+  <img src="https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/badge/Code%20Style-Black-black?style=flat-square" alt="Black">
+  <img src="https://img.shields.io/badge/Type%20Checking-Mypy-blue?style=flat-square" alt="Mypy">
 </p>
 
 **Enhance your images with just one function call.**
