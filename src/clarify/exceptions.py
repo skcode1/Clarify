@@ -23,3 +23,6 @@ class UnsupportedImageError(ClarifyError):
             message = f"The file at '{path}' is unreadable or not a supported image format."
         super().__init__(message)
         self.path = path
+
+class ModelNotFoundError(ClarifyError, FileNotFoundError):
+    """Raised when bundled ONNX weights cannot be located."""

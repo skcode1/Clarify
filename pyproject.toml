@@ -4,41 +4,49 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clarify-ai"
-version = "0.1.0"
-description = "A clean 3-line AI image upscaling and enhancement engine wrapping EDSR."
+version = "0.2.0"
+description = "Lightning-fast, lightweight AI image upscaling via ONNX Runtime & OpenCV."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "Soumik Kar", email = "ksoumik029@gmail.com" }
+    { name = "Soumik Kar", email = "your_email@domain.com" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Graphics",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "Pillow>=9.0.0",
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
-    "super-image>=0.1.7",
+    "numpy>=1.22.0",
+    "opencv-python-headless>=4.7.0",
+    "onnxruntime>=1.15.0",
+    "Pillow>=9.5.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "build>=1.0.0",
-    "twine>=4.0.0",
-]
+# Optional GPU acceleration for systems with NVIDIA drivers installed
+gpu = ["onnxruntime-gpu>=1.15.0"]
+dev = ["pytest>=7.0.0", "build>=1.0.0", "twine>=4.0.0"]
 
 [project.scripts]
 clarify = "clarify.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clarify"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"src/clarify/models" = "clarify/models"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "README.md",
+    "pyproject.toml",
+    "LICENSE",
+]
+[tool.pytest.ini_options]
+pythonpath = ["src"]
