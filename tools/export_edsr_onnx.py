@@ -1,9 +1,9 @@
 """Export PyTorch EDSR model from super-image to an ONNX graph with dynamic axes."""
 
 from pathlib import Path
-from pyexpat import model
 import torch
 from super_image import EdsrModel
+
 
 def export_edsr_to_onnx(scale: int = 2, output_path: str = "src/clarify/models/edsr_x2.onnx") -> None:
     print(f"Loading pretrained EDSR (scale={scale})...")
@@ -38,5 +38,13 @@ def export_edsr_to_onnx(scale: int = 2, output_path: str = "src/clarify/models/e
     
     print(f"ONNX export successful: {dest} ({dest.stat().st_size / (1024 * 1024):.2f} MB)")
 
+
+def export_all_scales() -> None:
+    """Export EDSR models for all supported scales (2x, 3x, 4x)."""
+    for scale in [2, 3, 4]:
+        output_path = f"src/clarify/models/edsr_x{scale}.onnx"
+        export_edsr_to_onnx(scale=scale, output_path=output_path)
+
+
 if __name__ == "__main__":
-    export_edsr_to_onnx()
+    export_all_scales()

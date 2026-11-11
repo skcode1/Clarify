@@ -23,9 +23,9 @@ def main() -> None:
         "-s",
         "--scale",
         type=int,
-        choices=[2],
+        choices=[2, 3, 4],
         default=2,
-        help="Scale multiplier for AI mode. Default: 2",
+        help="Scale multiplier for AI mode (2, 3, or 4). Default: 2",
     )
     parser.add_argument("-o", "--output", default=None, help="Custom output path.")
 

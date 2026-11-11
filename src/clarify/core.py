@@ -8,13 +8,13 @@ from typing import Literal, Optional, Union
 
 import cv2
 import numpy as np
-import onnxruntime as ort
+import onnxruntime as ort  # type: ignore[import-untyped]
 
 from .exceptions import ImageNotFoundError, ModelNotFoundError, UnsupportedImageError
 
-# Global in-memory cache for the ONNX Runtime InferenceSession
-_CACHED_SESSION: Optional[ort.InferenceSession] = None
-_CACHED_INPUT_NAME: Optional[str] = None
+# Global in-memory cache for the ONNX Runtime InferenceSession (per scale)
+_CACHED_SESSIONS: dict[int, ort.InferenceSession] = {}
+_CACHED_INPUT_NAMES: dict[int, str] = {}
 
 
 def _resolve_path(path_str: Union[str, Path]) -> Path:
@@ -45,23 +45,26 @@ def _get_model_path(scale: int = 2) -> Path:
 
 
 def _get_onnx_session(scale: int = 2) -> tuple[ort.InferenceSession, str]:
-    """Retrieve or initialize the ONNX Runtime session."""
-    global _CACHED_SESSION, _CACHED_INPUT_NAME
+    """Retrieve or initialize the ONNX Runtime session for a given scale."""
+    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
 
-    if _CACHED_SESSION is None:
+    if scale not in _CACHED_SESSIONS:
         model_path = _get_model_path(scale=scale)
 
-       
         available_providers = ort.get_available_providers()
-        providers = [p for p in ["CUDAExecutionProvider", "CPUExecutionProvider"] if p in available_providers]
+        # Priority: CUDA (NVIDIA) -> CoreML (Apple Silicon MPS) -> CPU
+        providers = [
+            p for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
+            if p in available_providers
+        ]
 
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-        _CACHED_SESSION = ort.InferenceSession(str(model_path), sess_options, providers=providers)
-        _CACHED_INPUT_NAME = _CACHED_SESSION.get_inputs()[0].name
+        _CACHED_SESSIONS[scale] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
+        _CACHED_INPUT_NAMES[scale] = _CACHED_SESSIONS[scale].get_inputs()[0].name
 
-    return _CACHED_SESSION, _CACHED_INPUT_NAME
+    return _CACHED_SESSIONS[scale], _CACHED_INPUT_NAMES[scale]
 
 
 def _enhance_classical(img_bgr: np.ndarray) -> np.ndarray:
@@ -92,14 +95,14 @@ def _enhance_ai(img_bgr: np.ndarray, scale: int = 2) -> np.ndarray:
     out_tensor = np.clip(out_tensor * 255.0, 0, 255).astype(np.uint8)
     out_rgb = np.transpose(out_tensor, (1, 2, 0))  # Shape: (H, W, C)
 
-    return cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+    return cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)  # type: ignore[no-any-return]
 
 
 def enhance(
     image: Union[str, Path],
     *,
     mode: Literal["ai", "classical"] = "ai",
-    scale: int = 2,
+    scale: Literal[2, 3, 4] = 2,
     output: Optional[Union[str, Path]] = None,
 ) -> Path:
     """Enhance and upscale an image instantly using ONNX Runtime.
@@ -107,12 +110,15 @@ def enhance(
     Args:
         image: Path to the target image file.
         mode: "ai" (EDSR super-resolution) or "classical" (OpenCV detail enhancement).
-        scale: Upscale multiplier factor (default: 2).
+        scale: Upscale multiplier factor (2, 3, or 4). Only applies to "ai" mode.
         output: Optional destination path. Defaults to <stem>_enhanced.png next to source.
 
     Returns:
         pathlib.Path: Absolute path pointing to the enhanced image file.
     """
+    if scale not in (2, 3, 4):
+        raise ValueError(f"Invalid scale '{scale}'. Choose 2, 3, or 4.")
+        
     input_path = _resolve_path(image)
     if not input_path.is_file():
         raise ImageNotFoundError(f"Source image not found: {input_path}")

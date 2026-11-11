@@ -181,19 +181,22 @@ Automatically:
 
 ### 2. Custom Upscaling
 
-Choose between 2x, 3x, and 4x upscaling:
+Choose between 2x, 3x, and 4x upscaling (AI mode only):
 
 ```python
 from clarify import enhance
 
-# 2x upscaling
-enhance("photo.jpg", scale=2)
+# 2x upscaling (AI)
+enhance("photo.jpg", mode="ai", scale=2)
 
-# 3x upscaling
-enhance("photo.jpg", scale=3)
+# 3x upscaling (AI)
+enhance("photo.jpg", mode="ai", scale=3)
 
-# 4x upscaling
-enhance("photo.jpg", scale=4)
+# 4x upscaling (AI)
+enhance("photo.jpg", mode="ai", scale=4)
+
+# Classical enhancement (no upscaling)
+enhance("photo.jpg", mode="classical")
 ```
 
 ### 3. Custom Output Location
@@ -248,6 +251,19 @@ for image in images:
     print(f"Enhanced: {result}")
 ```
 
+### 6. Classical Enhancement (Non-AI)
+
+Use OpenCV-based detail enhancement without AI upscaling:
+
+```python
+from clarify import enhance
+
+# Classical enhancement - preserves original dimensions
+enhance("photo.jpg", mode="classical")
+```
+
+Classical mode applies denoising and detail enhancement using OpenCV's `fastNlMeansDenoisingColored` and `detailEnhance` functions. It does not upscale the image.
+
 ---
 
 ## 💻 Command-Line Interface
@@ -256,16 +272,22 @@ for image in images:
 
 Once installed, you can enhance images directly from your terminal without writing Python scripts.
 
-### Basic Enhancement
+### Basic Enhancement (AI, 2x)
 
 ```bash
 clarify photo.jpg
 ```
 
-### 4x Upscaling
+### 4x AI Upscaling
 
 ```bash
 clarify photo.jpg --scale 4
+```
+
+### Classical Enhancement (Non-AI)
+
+```bash
+clarify photo.jpg --mode classical
 ```
 
 ### Custom Output Destination
@@ -284,7 +306,8 @@ clarify --help
 
 | Argument | Short | Type | Default | Description |
 |---|---|---|---|---|
-| `--scale` | `-s` | Integer | `2` | Upscaling factor: 2, 3, or 4. |
+| `--mode` | `-m` | Choice | `ai` | Enhancement pipeline: `ai` or `classical`. |
+| `--scale` | `-s` | Integer | `2` | Upscaling factor (AI mode only): 2, 3, or 4. |
 | `--output` | `-o` | String | `None` | Custom output filename or path. |
 | `--help` | `-h` | Flag | — | Displays command-line help. |
 
@@ -300,7 +323,8 @@ The primary public interface for image enhancement.
 def enhance(
     image: Union[str, Path],
     *,
-    scale: int = 2,
+    mode: Literal["ai", "classical"] = "ai",
+    scale: Literal[2, 3, 4] = 2,
     output: Optional[Union[str, Path]] = None,
 ) -> Path:
     ...
@@ -311,7 +335,8 @@ def enhance(
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `image` | `str \| Path` | Required | Input image path. |
-| `scale` | `int` | `2` | Upscaling factor. Accepted values: 2, 3, or 4. |
+| `mode` | `Literal["ai", "classical"]` | `"ai"` | Enhancement pipeline: "ai" (EDSR super-resolution) or "classical" (OpenCV detail enhancement). |
+| `scale` | `Literal[2, 3, 4]` | `2` | Upscaling factor (AI mode only). Accepted values: 2, 3, or 4. |
 | `output` | `str \| Path \| None` | `None` | Custom output destination. |
 
 ### Return Value
@@ -365,39 +390,39 @@ PNG encoding avoids additional lossy JPEG compression during output serializatio
 | Hardware | Backend | Priority |
 |---|---|---|
 | NVIDIA GPU | CUDA | 1 |
-| Apple Silicon | MPS | 2 |
+| Apple Silicon | CoreML | 2 |
 | Processor | CPU | 3 |
 
 ### Device Selection Logic
 
 ```text
-             ┌──────────────────┐
-             │      Start       │
-             └────────┬─────────┘
-                      |
-                      v
-          ┌───────────────────────┐
-          │ Check CUDA Availability│
-          └───────────┬───────────┘
-                      |
-                 +----+----+
-                 |         |
-                Yes        No
-                 |         |
-                 v         v
-           ┌─────────┐  ┌─────────────┐
-           │ CUDA GPU│  │ Check MPS   │
-           └─────────┘  └──────┬──────┘
-                               |
-                          +----+----+
-                          |         |
-                         Yes        No
-                          |         |
-                          v         v
-                    ┌─────────┐ ┌─────────┐
-                    │ Apple   │ │   CPU   │
-                    │   MPS   │ │ Fallback│
-                    └─────────┘ └─────────┘
+              ┌──────────────────┐
+              │      Start       │
+              └────────┬─────────┘
+                       |
+                       v
+           ┌───────────────────────┐
+           │ Check CUDA Availability│
+           └───────────┬───────────┘
+                       |
+                  +----+----+
+                  |         |
+                 Yes        No
+                  |         |
+                  v         v
+            ┌─────────┐  ┌──────────────────┐
+            │ CUDA GPU│  │ Check CoreML     │
+            └─────────┘  └────────┬─────────┘
+                                  |
+                             +----+----+
+                             |         |
+                            Yes        No
+                             |         |
+                             v         v
+                       ┌──────────┐ ┌─────────┐
+                       │ Apple    │ │   CPU   │
+                       │ CoreML   │ │ Fallback│
+                       └──────────┘ └─────────┘
 ```
 
 The library automatically falls back to CPU execution when a supported GPU backend is unavailable.
@@ -430,51 +455,51 @@ The pretrained model is cached in memory to reduce repeated initialization overh
 The internal processing pipeline follows a modular architecture:
 
 ```text
-                 ┌──────────────────────┐
-                 │    Input Image Path  │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │   Path Resolution    │
-                 │  Caller Context      │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │  Hardware Selector   │
-                 │   CUDA / MPS / CPU   │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │   Singleton Cache    │
-                 │  EDSR Model Weights  │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │   Model Inference    │
-                 │  Super-Resolution    │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │ Image Reconstruction│
-                 │   Tensor → Image     │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │   Disk Serializer    │
-                 │     PNG Output       │
-                 └──────────┬───────────┘
-                            |
-                            v
-                 ┌──────────────────────┐
-                 │    pathlib.Path      │
-                 │    Return Value      │
-                 └──────────────────────┘
+                  ┌──────────────────────┐
+                  │    Input Image Path  │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │   Path Resolution    │
+                  │  Caller Context      │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │  Hardware Selector   │
+                  │   CUDA / CoreML / CPU│
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │   Singleton Cache    │
+                  │  EDSR Model Weights  │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │   Model Inference    │
+                  │  Super-Resolution    │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │ Image Reconstruction│
+                  │   Tensor → Image     │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │   Disk Serializer    │
+                  │     PNG Output       │
+                  └──────────┬───────────┘
+                             |
+                             v
+                  ┌──────────────────────┐
+                  │    pathlib.Path      │
+                  │    Return Value      │
+                  └──────────────────────┘
 ```
 
 ### Core Components
@@ -485,7 +510,7 @@ Determines the appropriate base directory for relative input and output paths us
 
 **2. Hardware Selector**
 
-Detects supported hardware acceleration backends and selects the appropriate inference device.
+Detects supported hardware acceleration backends and selects the appropriate inference device (CUDA for NVIDIA, CoreML for Apple Silicon, CPU fallback).
 
 **3. Model Cache**
 
