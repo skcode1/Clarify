@@ -3,6 +3,7 @@
 from .core import enhance
 from .exceptions import (
     ClarifyError,
+    ConfigurationError,
     ImageNotFoundError,
     ModelNotFoundError,
     UnsupportedImageError,
@@ -11,9 +12,10 @@ from .exceptions import (
 __all__ = [
     "enhance",
     "ClarifyError",
+    "ConfigurationError",
     "ImageNotFoundError",
     "ModelNotFoundError",
     "UnsupportedImageError",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

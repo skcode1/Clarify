@@ -2,7 +2,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-from clarify import enhance, ImageNotFoundError, UnsupportedImageError
+from clarify import enhance, ConfigurationError, ImageNotFoundError, ModelNotFoundError, UnsupportedImageError
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def sample_image(tmp_path: Path) -> Path:
 def test_enhance_ai_upscales_dimensions(sample_image: Path):
     result_path = enhance(sample_image, mode="ai", scale=2)
     assert result_path.is_file()
-    assert result_path.name == "sample_enhanced.png"
+    assert result_path.name == "sample_ai.png"
 
     # Verify 2x upscale dimensions (32x32 -> 64x64)
     out_bgr = cv2.imread(str(result_path))
@@ -106,3 +106,64 @@ def test_png_input_support(tmp_path: Path):
     assert result_path.is_file()
     out_bgr = cv2.imread(str(result_path))
     assert out_bgr.shape == (32, 32, 3)
+
+
+def test_output_formats(sample_image: Path):
+    """Multi-format serializer produces correct suffixes for all formats."""
+    for fmt in ["png", "jpeg", "webp", "tiff"]:
+        out = enhance(sample_image, mode="classical", output_format=fmt, quality=90)
+        assert out.is_file()
+        expected = ".jpg" if fmt == "jpeg" else f".{fmt}"
+        assert out.suffix.lower() == expected
+
+
+def test_output_format_jpeg_alias(sample_image: Path):
+    """'jpg' is accepted as an alias for 'jpeg'."""
+    out = enhance(sample_image, mode="classical", output_format="jpg", quality=90)
+    assert out.is_file()
+    assert out.suffix.lower() == ".jpg"
+
+
+def test_quality_clamped_to_bounds(sample_image: Path):
+    """Quality values outside 1-100 are clamped rather than crashing."""
+    out_low = enhance(sample_image, mode="classical", output_format="jpeg", quality=0)
+    out_high = enhance(sample_image, mode="classical", output_format="jpeg", quality=200)
+    assert out_low.is_file()
+    assert out_high.is_file()
+
+
+def test_unsupported_format_raises(sample_image: Path):
+    """An unsupported output format raises ConfigurationError."""
+    with pytest.raises(ConfigurationError, match="Unsupported output format"):
+        enhance(sample_image, mode="classical", output_format="bmp")
+
+
+def test_denoise_preserves_dimensions(sample_image: Path):
+    out = enhance(sample_image, mode="denoise", strength=1.5)
+    img = cv2.imread(str(out))
+    assert img.shape == (32, 32, 3)
+
+
+def test_deblur_preserves_dimensions(sample_image: Path):
+    out = enhance(sample_image, mode="deblur", strength=1.2)
+    img = cv2.imread(str(out))
+    assert img.shape == (32, 32, 3)
+
+
+def test_denoise_strength_zero(sample_image: Path):
+    """Zero strength should still run and preserve dimensions."""
+    out = enhance(sample_image, mode="denoise", strength=0.0)
+    img = cv2.imread(str(out))
+    assert img.shape == (32, 32, 3)
+
+
+def test_face_restore_missing_model_raises(sample_image: Path):
+    """Face restore without the bundled ONNX artifact raises ModelNotFoundError."""
+    with pytest.raises(ModelNotFoundError):
+        enhance(sample_image, mode="face_restore")
+
+
+def test_classical_preserves_dimensions(sample_image: Path):
+    out = enhance(sample_image, mode="classical")
+    img = cv2.imread(str(out))
+    assert img.shape == (32, 32, 3)
