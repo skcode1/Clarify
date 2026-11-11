@@ -11,7 +11,7 @@ jobs:
   test:
     name: ${{ matrix.os }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -38,10 +38,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-hf-edsr-
 
-      - name: Upgrade pip and install package
+      - name: Upgrade pip and install package (dev + mcp extras)
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -e .[dev]
+          pip install -e ".[dev,mcp]"
 
       - name: Run Pytest
         run: |
@@ -64,9 +64,32 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install -e .[dev]
+          pip install -e ".[dev,mcp]"
           pip install mypy
 
-      - name: Run mypy
+      - name: Run mypy (strict)
         run: |
           mypy src/clarify --strict
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Run ruff check
+        run: |
+          ruff check src/clarify tests

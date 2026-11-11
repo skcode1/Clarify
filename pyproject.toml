@@ -29,10 +29,13 @@ dependencies = [
 [project.optional-dependencies]
 # Optional GPU acceleration for systems with NVIDIA drivers installed
 gpu = ["onnxruntime-gpu>=1.15.0"]
-dev = ["pytest>=7.0.0", "build>=1.0.0", "twine>=4.0.0"]
+# Model Context Protocol (MCP) server for local image upscaling via Claude Desktop / Cursor / agents
+mcp = ["mcp>=1.0.0,<2"]
+dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "mypy>=1.8.0", "ruff>=0.8.0", "build>=1.0.0", "twine>=4.0.0"]
 
 [project.scripts]
 clarify = "clarify.cli:main"
+clarify-mcp = "clarify.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clarify"]

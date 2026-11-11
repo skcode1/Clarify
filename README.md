@@ -23,6 +23,7 @@ No manual model configuration. No tensor manipulation. No complicated image-proc
 [Quick Install](#-quick-install) •
 [Usage](#-usage) •
 [CLI](#-command-line-interface) •
+[MCP Server](#-model-context-protocol-mcp-server) •
 [API Reference](#-api-reference) •
 [Architecture](#-architecture) •
 [Contributing](#-contributing)
@@ -369,6 +370,74 @@ clarify --help
 | `--strength` | — | `float` | `1.0` | Filter strength (denoise/deblur) |
 | `--output` | `-o` | `str` | `None` | Custom output path |
 | `--help` | `-h` | flag | — | Show help |
+
+---
+
+## 🔌 Model Context Protocol (MCP) Server
+
+`clarify-ai` includes an MCP server (`clarify.mcp_server`) so assistants such as
+Claude Desktop, Cursor, and custom agent runtimes can call your local upscaler
+as a tool — **no image data ever leaves your machine**.
+
+### Install
+
+```bash
+pip install -e ".[mcp]"
+# or, for development: pip install -e ".[dev,mcp]"
+```
+
+This registers two entry points:
+- `clarify` — the existing CLI (`clarify.cli:main`)
+- `clarify-mcp` — the MCP stdio server (`clarify.mcp_server:main`)
+
+### Run the server
+
+```bash
+# Via installed entry point
+clarify-mcp
+
+# Or directly from source
+python -m clarify.mcp_server
+```
+
+The server exposes one tool:
+
+| Tool | Description |
+|------|-------------|
+| `upscale_image` | Enhance/upscale a local image (ai / classical / denoise / deblur / face_restore) |
+
+```json
+{
+  "name": "upscale_image",
+  "arguments": {
+    "image_path": "/path/to/photo.jpg",
+    "scale": 2,
+    "mode": "ai",
+    "output_format": "png"
+  }
+}
+```
+
+Returns the absolute filepath of the saved, enhanced image. Sync ONNX/OpenCV
+inference runs in an executor thread so the async event loop stays responsive.
+
+### Claude Desktop / Cursor configuration
+
+Add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "clarify": {
+      "command": "python",
+      "args": ["-m", "clarify.mcp_server"]
+    }
+  }
+}
+```
+
+Then restart Claude Desktop / Cursor and use the `clarify` server's
+`upscale_image` tool from any conversation.
 
 ---
 
