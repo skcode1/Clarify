@@ -29,7 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 # Optional GPU acceleration for systems with NVIDIA drivers installed
 gpu = ["onnxruntime-gpu>=1.15.0"]
-dev = ["pytest>=7.0.0", "build>=1.0.0", "twine>=4.0.0"]
+dev = ["pytest>=7.0.0", "pytest-timeout>=2.0.0", "build>=1.0.0", "twine>=4.0.0"]
 
 [project.scripts]
 clarify = "clarify.cli:main"
