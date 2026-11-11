@@ -29,3 +29,13 @@ class UnsupportedImageError(ClarifyError):
 
 class ModelNotFoundError(ClarifyError, FileNotFoundError):
     """Raised when bundled ONNX weights cannot be located."""
+    
+    def __init__(self, path: Optional[str] = None, message: str = "Bundled ONNX weights cannot be located."):
+        if path:
+            message = f"Required model file not found at: {path}"
+        super().__init__(message)
+        self.path = path
+
+
+class ConfigurationError(ClarifyError, ValueError):
+    """Raised when unsupported modes, scales, or format options are provided."""
