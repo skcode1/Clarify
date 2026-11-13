@@ -18,7 +18,8 @@ It takes any image and produces a clearer, sharper, higher-quality version:
 
 | Mode | What it does |
 |------|--------------|
-| **ai** | AI super-resolution (EDSR) — upscales 2x, 3x, or 4x with clarity polish |
+| **ai** | AI super-resolution (EDSR Baseline, ~64ch, 16 blocks) — upscales 2x, 3x, or 4x with clarity polish |
+| **ai (hq)** | AI super-resolution (EDSR Full, ~256ch, 32 blocks) — higher quality, auto-downloaded on demand |
 | **classical** | OpenCV detail enhancement + denoising (no upscaling) |
 | **denoise** | Non-local means + bilateral filtering to remove noise |
 | **deblur** | LAB-space unsharp masking to recover edges |
@@ -26,7 +27,28 @@ It takes any image and produces a clearer, sharper, higher-quality version:
 
 Output formats: **PNG, JPEG, WebP, TIFF** (configurable quality).
 
+### Precision modes (AI mode only)
+
+`clarify-ai` ships with **EDSR Baseline** models bundled in the wheel (sub-50 MB footprint, works fully offline). For users who need maximum quality, **EDSR Full** models (~160 MB each) are available via ``precision="hq"`` — they are downloaded lazily on first use and cached in ``~/.cache/clarify/models`` with SHA-256 integrity verification.
+
+| Precision | Model | Size | Use case |
+|-----------|-------|------|----------|
+| ``fast`` (default) | EDSR Baseline | ~5-6 MB each (bundled) | Fast upscaling, offline/air-gapped |
+| ``hq`` | EDSR Full | ~160 MB each (cached) | Maximum quality, best results |
+
+```python
+# Fast: uses bundled EDSR Baseline (default, offline)
+enhance("photo.jpg", mode="ai", scale=2, precision="fast")
+
+# High quality: downloads EDSR Full on first use, caches locally
+enhance("photo.jpg", mode="ai", scale=2, precision="hq")
+
+# Air-gapped: use a custom local .onnx model
+enhance("photo.jpg", mode="ai", scale=2, precision="hq", model_path="/models/edsr_x2_full.onnx")
+```
+
 ---
+
 
 ## Quick example
 
@@ -153,6 +175,12 @@ clarify portrait.png --mode face_restore --format png
 # Custom output path
 clarify photo.jpg --output exports/enhanced.png
 
+# High quality: EDSR Full (downloaded on first use, cached locally)
+clarify photo.jpg --mode ai --scale 4 --precision hq
+
+# Air-gapped: custom local .onnx model
+clarify photo.jpg --mode ai --scale 2 --precision hq --model-path /models/edsr_x2_full.onnx
+
 # Help
 clarify --help
 ```
@@ -175,7 +203,7 @@ clarify --help
 
 - Python 3.9+
 - Runtime: `numpy`, `opencv-python-headless`, `onnxruntime`, `Pillow`
-- Dev: `pytest`, `pytest-timeout`, `build`, `twine`
+- Dev: `pytest`, `pytest-timeout`, `mypy`, `ruff`, `build`, `twine`
 
 ---
 

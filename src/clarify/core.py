@@ -4,29 +4,29 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal
 
 import cv2
 import numpy as np
 import onnxruntime as ort  # type: ignore[import-untyped]
 
 from clarify.exceptions import (
-    ClarifyError,
     ConfigurationError,
     ImageNotFoundError,
     ModelNotFoundError,
     UnsupportedImageError,
 )
+from clarify.models import Precision, get_edsr_model_path
 
 OutputFormat = Literal["png", "jpeg", "jpg", "webp", "tiff", "tif"]
 EnhanceMode = Literal["ai", "classical", "denoise", "deblur", "face_restore"]
 
-# Global in-memory cache for the ONNX Runtime InferenceSession (per scale)
-_CACHED_SESSIONS: dict[int, ort.InferenceSession] = {}
-_CACHED_INPUT_NAMES: dict[int, str] = {}
+# Global in-memory cache for ONNX Runtime InferenceSession (per scale + precision)
+_CACHED_SESSIONS: dict[tuple[int, Precision], ort.InferenceSession] = {}
+_CACHED_INPUT_NAMES: dict[tuple[int, Precision], str] = {}
 
 
-def _resolve_path(path_str: Union[str, Path]) -> Path:
+def _resolve_path(path_str: str | Path) -> Path:
     """Resolve file paths relative to caller frame or current directory."""
     raw = Path(path_str).expanduser()
     if raw.is_absolute():
@@ -45,24 +45,31 @@ def _resolve_path(path_str: Union[str, Path]) -> Path:
     return (Path.cwd() / raw).resolve()
 
 
-def _get_model_path(scale: int = 2) -> Path:
-    """Locate bundled ONNX model file within package directory."""
-    model_file = Path(__file__).parent / "models" / f"edsr_x{scale}.onnx"
-    if not model_file.is_file():
-        raise ModelNotFoundError(f"Model file not found at: {model_file}")
-    return model_file
+def _get_edsr_session(
+    scale: int = 2,
+    precision: Precision = "fast",
+    model_path: str | None = None,
+) -> ort.InferenceSession:
+    """Retrieve or initialize the ONNX Runtime session for a given scale + precision.
 
+    Sessions are cached per (scale, precision) tuple so fast (baseline) and hq
+    (full) models can coexist without collision.
+    """
+    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES  # noqa: PLW0602
 
-def _get_edsr_session(scale: int = 2) -> ort.InferenceSession:
-    """Retrieve or initialize the ONNX Runtime session for a given scale."""
-    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
+    cache_key: tuple[int, Precision] = (scale, precision)
 
-    if scale not in _CACHED_SESSIONS:
-        model_path = _get_model_path(scale=scale)
+    if cache_key not in _CACHED_SESSIONS:
+        resolved_model = get_edsr_model_path(
+            scale=scale,
+            precision=precision,
+            model_path=model_path,
+        )
 
         available_providers = ort.get_available_providers()
         providers = [
-            p for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
+            p
+            for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
             if p in available_providers
         ]
 
@@ -72,10 +79,12 @@ def _get_edsr_session(scale: int = 2) -> ort.InferenceSession:
         sess_options.inter_op_num_threads = 1
         sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
-        _CACHED_SESSIONS[scale] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
-        _CACHED_INPUT_NAMES[scale] = _CACHED_SESSIONS[scale].get_inputs()[0].name
+        _CACHED_SESSIONS[cache_key] = ort.InferenceSession(
+            str(resolved_model), sess_options, providers=providers
+        )
+        _CACHED_INPUT_NAMES[cache_key] = _CACHED_SESSIONS[cache_key].get_inputs()[0].name
 
-    return _CACHED_SESSIONS[scale]
+    return _CACHED_SESSIONS[cache_key]
 
 
 def _encode_and_save(
@@ -145,15 +154,75 @@ def _polish(img_bgr: np.ndarray, strength: float = 1.0) -> np.ndarray:
     return result
 
 
-def _enhance_ai(img_bgr: np.ndarray, scale: int = 2, polish: bool = True) -> np.ndarray:
-    """Super-resolution reconstruction via ONNX Runtime with clarity polish."""
-    session = _get_edsr_session(scale=scale)
-    input_name = session.get_inputs()[0].name
+def _run_tiled_edsr(
+    session: ort.InferenceSession,
+    input_name: str,
+    img_chw: np.ndarray,
+    scale: int,
+    tile_size: int = 256,
+    overlap: int = 16,
+) -> np.ndarray:
+    """Run ONNX super-resolution in overlapping tiles to keep RAM usage low.
+
+    EDSR Full (~43M parameters) can spike RAM by several gigabytes on CPU when
+    processing a full 1080p image in one pass. Tiling splits the input into
+    overlapping tiles, infers each independently, and blends the results with
+    weight normalization to avoid seam artifacts.
+    """
+    _, c, h, w = img_chw.shape
+
+    # Run directly if the image is small enough to fit in one tile.
+    if h <= tile_size and w <= tile_size:
+        return session.run(None, {input_name: img_chw})[0]  # type: ignore[no-any-return]
+
+    out_h, out_w = h * scale, w * scale
+    output = np.zeros((1, c, out_h, out_w), dtype=np.float32)
+    weight = np.zeros((1, c, out_h, out_w), dtype=np.float32)
+
+    stride = tile_size - overlap
+    for y in range(0, h, stride):
+        for x in range(0, w, stride):
+            y1 = min(y, max(0, h - tile_size))
+            x1 = min(x, max(0, w - tile_size))
+            y2 = min(y1 + tile_size, h)
+            x2 = min(x1 + tile_size, w)
+
+            tile = img_chw[:, :, y1:y2, x1:x2]
+            pred = session.run(None, {input_name: tile})[0]
+
+            oy1, oy2 = y1 * scale, y2 * scale
+            ox1, ox2 = x1 * scale, x2 * scale
+
+            output[:, :, oy1:oy2, ox1:ox2] += pred
+            weight[:, :, oy1:oy2, ox1:ox2] += 1.0
+
+    return output / np.maximum(weight, 1e-8)
+
+
+def _enhance_ai(
+    img_bgr: np.ndarray,
+    scale: int = 2,
+    polish: bool = True,
+    precision: Precision = "fast",
+    model_path: str | None = None,
+) -> np.ndarray:
+    """Super-resolution reconstruction via ONNX Runtime with clarity polish.
+
+    Uses direct full-image inference for ``precision="fast"`` (baseline) and
+    tiled inference for ``precision="hq"`` (full) to keep RAM usage bounded on
+    large images.
+    """
+    session = _get_edsr_session(scale=scale, precision=precision, model_path=model_path)
+    input_name = _CACHED_INPUT_NAMES[(scale, precision)]
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     blob = np.ascontiguousarray(np.transpose(img_rgb, (2, 0, 1))[np.newaxis, ...])
 
-    out_tensor = session.run(None, {input_name: blob})[0][0]
+    if precision == "hq":
+        out_tensor = _run_tiled_edsr(session, input_name, blob, scale=scale)[0]
+    else:
+        out_tensor = session.run(None, {input_name: blob})[0][0]
+
     out_tensor = np.clip(out_tensor * 255.0, 0, 255).astype(np.uint8)
     out_rgb = np.transpose(out_tensor, (1, 2, 0))
     result = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
@@ -257,11 +326,13 @@ def _enhance_face_restore(img_bgr: np.ndarray) -> np.ndarray:
 
 
 def enhance(
-    image: Union[str, Path],
+    image: str | Path,
     *,
     mode: EnhanceMode = "ai",
     scale: Literal[2, 3, 4] = 2,
-    output: Optional[Union[str, Path]] = None,
+    precision: Precision = "fast",
+    model_path: str | None = None,
+    output: str | Path | None = None,
     output_format: OutputFormat = "png",
     quality: int = 95,
     strength: float = 1.0,
@@ -272,6 +343,10 @@ def enhance(
         image: Local filepath to source image.
         mode: Processing algorithm: 'ai', 'classical', 'denoise', 'deblur', 'face_restore'.
         scale: Upscaling factor (2, 3, 4) for 'ai' mode.
+        precision: AI model precision — ``"fast"`` (bundled EDSR Baseline) or
+            ``"hq"`` (EDSR Full, lazily downloaded and cached).
+        model_path: Optional explicit path to a custom .onnx model file
+            (air-gapped / offline use).
         output: Explicit destination path. If None, saves next to source.
         output_format: Target file format ('png', 'jpeg', 'webp', 'tiff').
         quality: Compression quality (1-100) for JPEG and WebP.
@@ -292,7 +367,13 @@ def enhance(
     if mode == "ai":
         if scale not in (2, 3, 4):
             raise ConfigurationError(f"Invalid scale '{scale}' for AI mode. Use 2, 3, or 4.")
-        result = _enhance_ai(img_bgr, scale=scale, polish=True)
+        result = _enhance_ai(
+            img_bgr,
+            scale=scale,
+            polish=True,
+            precision=precision,
+            model_path=model_path,
+        )
     elif mode == "classical":
         result = _enhance_classical(img_bgr)
     elif mode == "denoise":

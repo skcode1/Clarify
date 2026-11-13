@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clarify-ai"
-version = "0.3.0"
+version = "0.4.0"
 description = "Lightning-fast, lightweight AI image upscaling via ONNX Runtime & OpenCV."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -29,7 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 # Optional GPU acceleration for systems with NVIDIA drivers installed
 gpu = ["onnxruntime-gpu>=1.15.0"]
-dev = ["pytest>=7.0.0", "pytest-timeout>=2.0.0", "build>=1.0.0", "twine>=4.0.0"]
+dev = ["pytest>=7.0.0", "pytest-timeout>=2.0.0", "mypy>=1.8.0", "ruff>=0.8.0", "build>=1.0.0", "twine>=4.0.0"]
 
 [project.scripts]
 clarify = "clarify.cli:main"

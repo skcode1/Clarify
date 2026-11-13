@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+
 from .core import enhance
 from .exceptions import ClarifyError
 
@@ -24,6 +25,18 @@ def main() -> None:
         choices=[2, 3, 4],
         default=2,
         help="Super-resolution scale factor for 'ai' mode (default: 2).",
+    )
+    parser.add_argument(
+        "-p", "--precision",
+        choices=["fast", "hq"],
+        default="fast",
+        help="AI model precision: 'fast' (bundled EDSR Baseline) or 'hq' (EDSR Full, auto-cached).",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Optional path to a custom local .onnx model file (air-gapped HQ mode).",
     )
     parser.add_argument(
         "-f", "--format",
@@ -52,6 +65,8 @@ def main() -> None:
             args.image,
             mode=args.mode,
             scale=args.scale,
+            precision=args.precision,
+            model_path=args.model_path,
             output=args.output,
             output_format=args.format,
             quality=args.quality,
