@@ -4,7 +4,7 @@
 
 **Zero-config AI image enhancement and super-resolution for Python — run locally, no PyPI required.**
 
-One function call. No PyPI. No internet after clone. Sub-50 MB footprint.
+One function call. No PyPI. No internet after clone for default models. Sub-50 MB footprint.
 
 </div>
 
@@ -18,8 +18,8 @@ It takes any image and produces a clearer, sharper, higher-quality version:
 
 | Mode | What it does |
 |------|--------------|
-| **ai** | AI super-resolution (EDSR Baseline, ~64ch, 16 blocks) — upscales 2x, 3x, or 4x with clarity polish |
-| **ai (hq)** | AI super-resolution (EDSR Full, ~256ch, 32 blocks) — higher quality, auto-downloaded on demand |
+| **ai** (default) | AI super-resolution (EDSR Baseline, ~64ch, 16 blocks) — upscales 2x, 3x, or 4x with clarity polish |
+| **ai (hq)** | AI super-resolution (EDSR Full, ~256ch, 32 blocks) — higher quality, downloaded lazily on demand |
 | **classical** | OpenCV detail enhancement + denoising (no upscaling) |
 | **denoise** | Non-local means + bilateral filtering to remove noise |
 | **deblur** | LAB-space unsharp masking to recover edges |
@@ -29,98 +29,70 @@ Output formats: **PNG, JPEG, WebP, TIFF** (configurable quality).
 
 ### Precision modes (AI mode only)
 
-`clarify-ai` ships with **EDSR Baseline** models bundled in the wheel (sub-50 MB footprint, works fully offline). For users who need maximum quality, **EDSR Full** models (~160 MB each) are available via ``precision="hq"`` — they are downloaded lazily on first use and cached in ``~/.cache/clarify/models`` with SHA-256 integrity verification.
+`clarify-ai` ships with **EDSR Baseline** models bundled in the wheel (sub-50 MB footprint, works fully offline with no internet needed). For users who need maximum quality, **EDSR Full** models (~160 MB each) are available via ``precision="hq"`` — they are downloaded lazily and individually on first use, then cached in ``~/.cache/clarify/models`` with SHA-256 integrity verification.
 
-| Precision | Model | Size | Use case |
+| Precision | Model | Size | Delivery |
 |-----------|-------|------|----------|
-| ``fast`` (default) | EDSR Baseline | ~5-6 MB each (bundled) | Fast upscaling, offline/air-gapped |
-| ``hq`` | EDSR Full | ~160 MB each (cached) | Maximum quality, best results |
+| ``fast`` (default) | EDSR Baseline | ~5–6 MB each | Bundled at install — offline by default |
+| ``hq`` | EDSR Full | ~160 MB each | Downloaded per-scale on first use — cached locally |
+
+### Model lifecycle for external users
+
+**Install time** — Only EDSR Baseline models (~5–6 MB each) are bundled. The initial download stays under 50 MB, so `clarify-ai` works offline immediately after install.
+
+**On first use of hq mode** — The EDSR Full model for the requested scale is downloaded individually (e.g., scale=2 downloads only `edsr_x2_full.onnx`, ~160 MB). The SHA-256 hash is verified before caching. Subsequent runs reuse the cached file locally without touching the internet. Other scales (x3, x4) are downloaded only if you explicitly request them later.
 
 ```python
 # Fast: uses bundled EDSR Baseline (default, offline)
 enhance("photo.jpg", mode="ai", scale=2, precision="fast")
 
-# High quality: downloads EDSR Full on first use, caches locally
+# High quality: downloads EDSR Full x2 on first use, caches locally
 enhance("photo.jpg", mode="ai", scale=2, precision="hq")
 
-# Air-gapped: use a custom local .onnx model
+# Air-gapped / offline: point to a pre-transferred local .onnx file
 enhance("photo.jpg", mode="ai", scale=2, precision="hq", model_path="/models/edsr_x2_full.onnx")
-```
-
----
-
-
-## Quick example
-
-```python
-from clarify import enhance
-
-# AI super-resolution 2x, saved as PNG next to input
-enhance("photo.jpg", mode="ai", scale=2)
-
-# Denoise to JPEG at quality 92
-enhance("noisy.jpg", mode="denoise", output_format="jpeg", quality=92)
-
-# Deblur to WebP
-enhance("blurry.jpg", mode="deblur", output_format="webp", quality=90)
-
-# Face restore to TIFF
-enhance("portrait.png", mode="face_restore", output_format="tiff")
 ```
 
 ---
 
 ## Install & Use
 
-### 1. pip (from source)
+Because `clarify-ai` is not published on PyPI, install it directly from GitHub:
+
+### 1. Direct Git install (most common)
 
 ```bash
-git clone https://github.com/your-username/clarify.git
-cd clarify
+pip install git+https://github.com/skcode1/Clarify.git
+```
+
+### 2. Clone & local install
+
+```bash
+git clone https://github.com/skcode1/Clarify.git
+cd Clarify
 pip install -e ".[dev]"
 ```
 
-Then:
-
-```python
-from clarify import enhance
-enhance("photo.jpg")
-```
-
-Or via CLI:
+### 3. Build & transfer offline wheel (air-gapped)
 
 ```bash
-clarify photo.jpg --mode ai --scale 4 --format png
-```
-
-### 2. pip (install wheel)
-
-```bash
-# Build
-cd clarify
+# On a machine with internet
+git clone https://github.com/skcode1/Clarify.git
+cd Clarify
 pip install build
 python -m build
 
-# Install the wheel
-pip install dist/clarify_ai-0.3.0-py3-none-any.whl
-
-# Use
-clarify photo.jpg
-```
-
-### 3. Git (direct dependency)
-
-```bash
-pip install git+https://github.com/your-username/clarify.git
+# Transfer dist/clarify_ai-0.4.0-py3-none-any.whl to the offline machine
+pip install clarify_ai-0.4.0-py3-none-any.whl
 ```
 
 ### 4. Vendor into your project (no install)
 
 ```bash
 # Copy the package into your project
-git clone https://github.com/your-username/clarify.git clarify-temp
-cp -r clarify-temp/src/clarify ./vendor/
-rm -rf clarify-temp
+git clone https://github.com/skcode1/Clarify.git Clarify-temp
+cp -r Clarify-temp/src/clarify ./vendor/
+rm -rf Clarify-temp
 
 # Use
 import sys
@@ -129,24 +101,11 @@ from clarify import enhance
 enhance("photo.jpg")
 ```
 
-### 5. curl + pip (air-gapped / offline)
+### 5. Clone & run directly
 
 ```bash
-# On a machine with internet
-curl -L https://github.com/your-username/clarify/archive/refs/heads/main.tar.gz -o clarify.tar.gz
-tar -xzf clarify.tar.gz
-cd clarify-main
-pip install -e ".[dev]"
-
-# Copy the clarify_ai-x.x.x-py3-none-any.whl to your offline machine
-pip install clarify_ai-0.3.0-py3-none-any.whl
-```
-
-### 6. GitHub (clone & run directly)
-
-```bash
-git clone https://github.com/your-username/clarify.git
-cd clarify
+git clone https://github.com/skcode1/Clarify.git
+cd Clarify
 python -m venv .venv
 source .venv/bin/activate
 pip install numpy opencv-python-headless onnxruntime pillow
@@ -157,7 +116,7 @@ PYTHONPATH=src python -c "from clarify import enhance; enhance('photo.jpg')"
 ### CLI usage
 
 ```bash
-# Basic AI upscale (2x PNG)
+# Basic AI upscale (2x PNG, bundled baseline — offline)
 clarify photo.jpg
 
 # 4x AI upscale to WebP
@@ -185,6 +144,30 @@ clarify photo.jpg --mode ai --scale 2 --precision hq --model-path /models/edsr_x
 clarify --help
 ```
 
+### Python API
+
+```python
+from clarify import enhance
+
+# AI super-resolution 2x, saved as PNG next to input (bundled baseline — offline)
+enhance("photo.jpg", mode="ai", scale=2)
+
+# Denoise to JPEG at quality 92
+enhance("noisy.jpg", mode="denoise", output_format="jpeg", quality=92)
+
+# Deblur to WebP
+enhance("blurry.jpg", mode="deblur", output_format="webp", quality=90)
+
+# Face restore to TIFF
+enhance("portrait.png", mode="face_restore", output_format="tiff")
+
+# High quality: EDSR Full (downloaded on first use, cached locally)
+enhance("photo.jpg", mode="ai", scale=4, precision="hq")
+
+# Air-gapped: custom local .onnx model
+enhance("photo.jpg", mode="ai", scale=2, precision="hq", model_path="/models/edsr_x2_full.onnx")
+```
+
 ---
 
 ## For whom is this useful?
@@ -194,7 +177,7 @@ clarify --help
 | **Designers** | Turn low-res or blurry assets into print-ready, polished images with one command |
 | **Developers** | Embed image enhancement in apps without bundling PyTorch/TensorFlow (sub-50 MB) |
 | **Photographers** | Denoise, deblur, and upscale photos locally — no cloud upload, no API keys |
-| **Teams in air-gapped environments** | Build a wheel once, distribute offline — no internet or PyPI needed at runtime |
+| **Teams in air-gapped environments** | Build a wheel once, distribute offline — no internet or PyPI needed at runtime (default models only) |
 | **CI/CD pipelines** | Batch-enhance images in automated workflows with the CLI |
 
 ---
