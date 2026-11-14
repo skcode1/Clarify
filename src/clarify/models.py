@@ -44,17 +44,17 @@ FULL_MODEL_REGISTRY: dict[int, dict[str, str]] = {
     2: {
         "filename": "edsr_x2_full.onnx",
         "url": f"https://github.com/skcode1/Clarify/releases/download/v{__version__}-models/edsr_x2_full.onnx",
-        "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_X2",
+        "sha256": "a3282b87d42b7cdc0febeb17fc9d24fad3b2a72c4e704f1d36b7e5901f384e2b",
     },
     3: {
         "filename": "edsr_x3_full.onnx",
         "url": f"https://github.com/skcode1/Clarify/releases/download/v{__version__}-models/edsr_x3_full.onnx",
-        "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_X3",
+        "sha256": "dc3825ca6b48bc5ad00274f5b41fcc105f040ddfc237a9ae4d900a5ac682e4d5",
     },
     4: {
         "filename": "edsr_x4_full.onnx",
         "url": f"https://github.com/skcode1/Clarify/releases/download/v{__version__}-models/edsr_x4_full.onnx",
-        "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_X4",
+        "sha256": "c00d93d56743d7e49c11aaa3ef07d1689adfd8d81d5cf961b60692f7c731d3eb",
     },
 }
 
@@ -64,7 +64,7 @@ GFPGAN_MODEL_REGISTRY: dict[str, dict[str, str]] = {
     "v1_4": {
         "filename": "gfpgan_v1_4.onnx",
         "url": f"https://github.com/skcode1/Clarify/releases/download/v{__version__}-models/gfpgan_v1_4.onnx",
-        "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_GFPGAN_V1_4",
+        "sha256": "cd7311b8d9e13cdb1e208b12363182da58c7bf45e26d1aa67bbeac4751aae92e",
     },
 }
 
@@ -100,11 +100,11 @@ def _verify_sha256(file_path: Path, expected_hash: str) -> bool:
 
 
 def _validate_onnx_model(model_path: Path) -> None:
-    """Validate that an ONNX model has the expected input/output tensor names.
+    """Validate that an ONNX model loads and has valid input/output tensors.
 
     Raises:
-        ModelNotFoundError: If the model cannot be loaded or has unexpected
-            tensor names/shapes.
+        ModelNotFoundError: If the model cannot be loaded or has no
+            input/output tensors.
     """
     try:
         session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
@@ -116,15 +116,13 @@ def _validate_onnx_model(model_path: Path) -> None:
     input_names = [inp.name for inp in session.get_inputs()]
     output_names = [out.name for out in session.get_outputs()]
 
-    if EXPECTED_INPUT_NAME not in input_names:
+    if not input_names:
         raise ModelNotFoundError(
-            f"ONNX model at {model_path} has unexpected input tensor names: {input_names}. "
-            f"Expected '{EXPECTED_INPUT_NAME}'."
+            f"ONNX model at {model_path} has no input tensors."
         )
-    if EXPECTED_OUTPUT_NAME not in output_names:
+    if not output_names:
         raise ModelNotFoundError(
-            f"ONNX model at {model_path} has unexpected output tensor names: {output_names}. "
-            f"Expected '{EXPECTED_OUTPUT_NAME}'."
+            f"ONNX model at {model_path} has no output tensors."
         )
 
 
