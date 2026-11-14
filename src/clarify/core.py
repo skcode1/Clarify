@@ -13,17 +13,16 @@ import onnxruntime as ort  # type: ignore[import-untyped]
 from clarify.exceptions import (
     ConfigurationError,
     ImageNotFoundError,
-    ModelNotFoundError,
     UnsupportedImageError,
 )
-from clarify.models import Precision, get_edsr_model_path
+from clarify.models import Precision, get_edsr_model_path, get_gfpgan_model_path
 
 OutputFormat = Literal["png", "jpeg", "jpg", "webp", "tiff", "tif"]
 EnhanceMode = Literal["ai", "classical", "denoise", "deblur", "face_restore"]
 
-# Global in-memory cache for ONNX Runtime InferenceSession (per scale + precision)
-_CACHED_SESSIONS: dict[tuple[int, Precision], ort.InferenceSession] = {}
-_CACHED_INPUT_NAMES: dict[tuple[int, Precision], str] = {}
+# Global in-memory cache for ONNX Runtime InferenceSession (per scale + precision + model_path)
+_CACHED_SESSIONS: dict[tuple[int, Precision, str | None], ort.InferenceSession] = {}
+_CACHED_INPUT_NAMES: dict[tuple[int, Precision, str | None], str] = {}
 
 
 def _resolve_path(path_str: str | Path) -> Path:
@@ -57,7 +56,7 @@ def _get_edsr_session(
     """
     global _CACHED_SESSIONS, _CACHED_INPUT_NAMES  # noqa: PLW0602
 
-    cache_key: tuple[int, Precision] = (scale, precision)
+    cache_key: tuple[int, Precision, str | None] = (scale, precision, model_path)
 
     if cache_key not in _CACHED_SESSIONS:
         resolved_model = get_edsr_model_path(
@@ -213,7 +212,7 @@ def _enhance_ai(
     large images.
     """
     session = _get_edsr_session(scale=scale, precision=precision, model_path=model_path)
-    input_name = _CACHED_INPUT_NAMES[(scale, precision)]
+    input_name = _CACHED_INPUT_NAMES[(scale, precision, model_path)]
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     blob = np.ascontiguousarray(np.transpose(img_rgb, (2, 0, 1))[np.newaxis, ...])
@@ -288,11 +287,9 @@ def _restore_face_patch(face_rgb_512: np.ndarray, session: ort.InferenceSession)
 
 def _enhance_face_restore(img_bgr: np.ndarray) -> np.ndarray:
     """Detects and restores facial areas, then blends back into the image."""
-    model_path = Path(__file__).parent / "models" / "gfpgan_v1_4.onnx"
-    if not model_path.is_file():
-        raise ModelNotFoundError(f"Face restore model missing: {model_path}")
+    resolved_model = get_gfpgan_model_path(version="v1_4")
 
-    session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(resolved_model), providers=["CPUExecutionProvider"])
 
     h, w = img_bgr.shape[:2]
     cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")  # type: ignore[attr-defined]

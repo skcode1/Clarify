@@ -38,9 +38,9 @@ def test_get_edsr_model_path_invalid_precision():
 
 
 def test_get_edsr_model_path_custom_model_exists(tmp_path: Path):
-    """Explicit model_path should be returned when the file exists."""
-    custom = tmp_path / "custom.onnx"
-    custom.write_bytes(b"\x00" * 100)
+    """Explicit model_path should be returned when the file exists and is valid ONNX."""
+    # Use a real bundled baseline model as a valid custom model
+    custom = Path("src/clarify/models/edsr_x2.onnx")
     path = get_edsr_model_path(scale=2, precision="hq", model_path=str(custom))
     assert path == custom.resolve()
 
@@ -51,63 +51,80 @@ def test_get_edsr_model_path_custom_model_missing():
         get_edsr_model_path(scale=2, precision="hq", model_path="/nonexistent/model.onnx")
 
 
-def test_list_available_models_structure():
-    """list_available_models should return a dict with x2, x3, x4 keys."""
-    summary = list_available_models()
-    assert set(summary.keys()) == {"x2", "x3", "x4"}
-    for scale_key in ("x2", "x3", "x4"):
-        entry = summary[scale_key]
-        assert "fast" in entry
-        assert "hq" in entry
-        assert entry["fast"]["source"] == "bundled"
-        assert entry["hq"]["source"] == "cache_or_download"
-        assert entry["fast"]["available"] is True
+def test_get_edsr_model_path_custom_model_invalid_onnx(tmp_path: Path):
+    """Explicit model_path that is not a valid ONNX model should raise ModelNotFoundError."""
+    invalid = tmp_path / "not_onnx.onnx"
+    invalid.write_bytes(b"this is not an onnx file")
+    with pytest.raises(ModelNotFoundError, match="Failed to load ONNX model"):
+        get_edsr_model_path(scale=2, precision="hq", model_path=str(invalid))
 
 
-@patch("clarify.models.urllib.request.urlretrieve")
-def test_get_edsr_model_path_hq_download_and_cache(mock_urlretrieve, tmp_path, monkeypatch):
+def test_placeholder_hash_rejected():
+    """Placeholder SHA-256 hashes should be rejected with a clear error message."""
+    # Temporarily replace the registry with placeholder hashes
+    original_registry = dict(FULL_MODEL_REGISTRY)
+    try:
+        FULL_MODEL_REGISTRY[2] = {
+            "filename": "edsr_x2_full.onnx",
+            "url": "https://example.com/edsr_x2_full.onnx",
+            "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_X2",
+        }
+        with pytest.raises(ModelNotFoundError, match="placeholder"):
+            get_edsr_model_path(scale=2, precision="hq")
+    finally:
+        FULL_MODEL_REGISTRY.clear()
+        FULL_MODEL_REGISTRY.update(original_registry)
+
+
+@patch("clarify.models._download_file")
+def test_get_edsr_model_path_hq_download_and_cache(mock_download, tmp_path, monkeypatch):
     """precision='hq' should download, verify SHA-256, and cache the model."""
     monkeypatch.setattr("clarify.models.CACHE_DIR", tmp_path / "cache")
+    # Use a real SHA-256 hash of a dummy file
+    dummy_content = b"\x00" * 1000
+    import hashlib
+    real_hash = hashlib.sha256(dummy_content).hexdigest()
+
     monkeypatch.setattr("clarify.models.FULL_MODEL_REGISTRY", {
         2: {
             "filename": "edsr_x2_full.onnx",
             "url": "https://example.com/edsr_x2_full.onnx",
-            "sha256": "REPLACE_WITH_ACTUAL_SHA256_FOR_X2",
+            "sha256": real_hash,
         },
         3: FULL_MODEL_REGISTRY[3],
         4: FULL_MODEL_REGISTRY[4],
     })
 
-    # Simulate a downloaded file by having urlretrieve create it
-    def fake_urlretrieve(url, filename):
-        Path(filename).write_bytes(b"\x00" * 1000)
+    # Simulate a downloaded file by having _download_file create it
+    def fake_download(url, filename, timeout=300):
+        Path(filename).write_bytes(dummy_content)
 
-    mock_urlretrieve.side_effect = fake_urlretrieve
+    mock_download.side_effect = fake_download
 
     path = get_edsr_model_path(scale=2, precision="hq")
     assert path.is_file()
     assert path.name == "edsr_x2_full.onnx"
-    mock_urlretrieve.assert_called_once()
+    mock_download.assert_called_once()
 
 
-@patch("clarify.models.urllib.request.urlretrieve")
-def test_get_edsr_model_path_hq_sha256_mismatch(mock_urlretrieve, tmp_path, monkeypatch):
+@patch("clarify.models._download_file")
+def test_get_edsr_model_path_hq_sha256_mismatch(mock_download, tmp_path, monkeypatch):
     """SHA-256 mismatch on downloaded model should raise ModelNotFoundError."""
     monkeypatch.setattr("clarify.models.CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr("clarify.models.FULL_MODEL_REGISTRY", {
         2: {
             "filename": "edsr_x2_full.onnx",
             "url": "https://example.com/edsr_x2_full.onnx",
-            "sha256": "deadbeef" * 8,  # invalid hash
+            "sha256": "deadbeef" * 8,  # invalid hash that won't match
         },
         3: FULL_MODEL_REGISTRY[3],
         4: FULL_MODEL_REGISTRY[4],
     })
 
-    def fake_urlretrieve(url, filename):
+    def fake_download(url, filename, timeout=300):
         Path(filename).write_bytes(b"\x00" * 1000)
 
-    mock_urlretrieve.side_effect = fake_urlretrieve
+    mock_download.side_effect = fake_download
 
     with pytest.raises(ModelNotFoundError, match="SHA-256 integrity check"):
         get_edsr_model_path(scale=2, precision="hq")
@@ -129,7 +146,23 @@ def test_enhance_ai_fast_precision_scale_4(sample_image: Path):
     assert out_bgr.shape == (128, 128, 3)  # 4x upscale
 
 
-# --- shared fixture ---
+def test_list_available_models_structure():
+    """list_available_models should return a dict with x2, x3, x4, face_restore keys."""
+    summary = list_available_models()
+    assert set(summary.keys()) == {"x2", "x3", "x4", "face_restore"}
+    for scale_key in ("x2", "x3", "x4"):
+        entry = summary[scale_key]
+        assert "fast" in entry
+        assert "hq" in entry
+        assert entry["fast"]["source"] == "bundled"
+        assert entry["fast"]["available"] is True
+        assert "hash_configured" in entry["hq"]
+    # face_restore entry
+    fr_entry = summary["face_restore"]
+    assert "gfpgan_v1_4" in fr_entry
+    assert fr_entry["gfpgan_v1_4"]["source"] in ("bundled", "cache_or_download")
+    assert "hash_configured" in fr_entry["gfpgan_v1_4"]
+
 
 @pytest.fixture
 def sample_image(tmp_path: Path) -> Path:

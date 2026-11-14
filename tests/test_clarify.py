@@ -1,8 +1,15 @@
 from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
-from clarify import enhance, ConfigurationError, ImageNotFoundError, ModelNotFoundError, UnsupportedImageError
+
+from clarify import (
+    ConfigurationError,
+    ImageNotFoundError,
+    ModelNotFoundError,
+    enhance,
+)
 
 
 @pytest.fixture

@@ -335,17 +335,18 @@ Full models slot into the **MODEL SELECTION** and **ONNX RUNTIME EXECUTION ENGIN
 
 ### Session Caching Per Precision
 
-Sessions are cached per `(scale, precision)` tuple:
+Sessions are cached per `(scale, precision, model_path)` tuple:
 
 ```python
-_CACHED_SESSIONS: dict[tuple[int, Precision], ort.InferenceSession] = {}
-_CACHED_INPUT_NAMES: dict[tuple[int, Precision], str] = {}
+_CACHED_SESSIONS: dict[tuple[int, Precision, str | None], ort.InferenceSession] = {}
+_CACHED_INPUT_NAMES: dict[tuple[int, Precision, str | None], str] = {}
 ```
 
 This means:
-- `enhance(img, scale=2, precision="fast")` → caches session at key `(2, "fast")`
-- `enhance(img, scale=2, precision="hq")` → caches session at key `(2, "hq")`
-- Both can be active simultaneously without reloading models
+- `enhance(img, scale=2, precision="fast")` → caches session at key `(2, "fast", None)`
+- `enhance(img, scale=2, precision="hq")` → caches session at key `(2, "hq", None)`
+- `enhance(img, scale=2, precision="hq", model_path="/models/custom.onnx")` → caches at key `(2, "hq", "/models/custom.onnx")`
+- Different custom models for the same scale/precision do not collide
 
 ### Tiled Inference for Full Models
 
@@ -369,15 +370,26 @@ Baseline mode (64 channels, ~5M parameters) does not require tiling and runs ful
 
 ### SHA-256 Integrity Verification
 
-Every downloaded Full model is verified against its expected SHA-256 hash before being accepted:
+Every downloaded model (EDSR Full or GFPGAN) is verified against its expected SHA-256 hash before being accepted:
 
-1. Download to a temporary `.onnx.tmp` file
+1. Download to a temporary `.onnx.tmp` file (never directly to the final path)
 2. Compute SHA-256 of the downloaded bytes
-3. Compare against the registry entry for that scale
+3. Compare against the registry entry for that model
 4. If match → atomically rename `.onnx.tmp` → final filename
 5. If mismatch → delete temp file, raise `ModelNotFoundError`
 
-Placeholder hashes (`REPLACE_WITH_ACTUAL_SHA256_FOR_X2`, etc.) are accepted during development so the module imports cleanly offline. Before publishing Full models to GitHub Releases, replace each placeholder with the actual hash from `sha256sum edsr_x*_full.onnx`.
+**Placeholder hashes are REJECTED** — not accepted. If a SHA-256 entry still reads `REPLACE_WITH_ACTUAL_SHA256_FOR_...`, the model cannot be downloaded. The user gets a clear `ModelNotFoundError` explaining:
+- Replace the placeholder hash in `src/clarify/models.py` with the real hash from `sha256sum`, **or**
+- Pass a local `.onnx` file via `model_path`, **or**
+- Use `precision="fast"` (EDSR Baseline, bundled) for offline use.
+
+This prevents corrupted downloads, 404 HTML pages, or truncated files from being silently accepted as valid models.
+
+Download safety details:
+- Downloads always write to a `.tmp` file first
+- SHA-256 is verified on the `.tmp` file before any rename
+- Only after hash verification passes does `tmp_file.replace(cached_file)` execute
+- On any failure (network, hash mismatch, timeout), the `.tmp` file is deleted
 
 ---
 
@@ -482,19 +494,22 @@ def _resolve_path(path_str: str | Path) -> Path:
 
 ### Module Overview
 
-`src/clarify/models.py` is the single source of truth for EDSR model resolution. It implements:
+`src/clarify/models.py` is the single source of truth for EDSR and GFPGAN model resolution. It implements:
 
 - **Bundled Baseline resolution** — Returns paths to `.onnx` files inside the installed package
-- **Lazy Full download** — Fetches from GitHub Releases on first hq use
+- **Lazy Full download** — Fetches EDSR Full models from GitHub Releases on first hq use
+- **Lazy GFPGAN download** — Fetches GFPGAN face restoration model from GitHub Releases on first `face_restore` use
 - **Cache management** — Stores downloaded models in `~/.cache/clarify/models/`
 - **SHA-256 verification** — Validates integrity before accepting any downloaded file
 - **Custom model_path support** — Bypasses download for air-gapped/offline use
 
 ### Resolution Order
 
+**EDSR models** (`get_edsr_model_path`):
+
 ```
 1. model_path argument provided?
-   ├─ Yes → Validate file exists → Return it (air-gapped/custom)
+   ├─ Yes → Validate file exists + ONNX tensor names → Return it (air-gapped/custom)
    └─ No → Continue to step 2
 
 2. precision == "fast"?
@@ -512,12 +527,35 @@ def _resolve_path(path_str: str | Path) -> Path:
    └─ Any failure → Raise ModelNotFoundError with actionable message
 ```
 
+**GFPGAN model** (`get_gfpgan_model_path`):
+
+```
+1. model_path argument provided?
+   ├─ Yes → Validate file exists + ONNX tensor names → Return it (air-gapped/custom)
+   └─ No → Continue to step 2
+
+2. Bundled gfpgan_v1_4.onnx present in package dir?
+   ├─ Yes → Return it
+   └─ No → Continue to step 3
+
+3. Download from GitHub Release?
+   ├─ Check ~/.cache/clarify/models/gfpgan_v1_4.onnx
+   │  ├─ File exists AND SHA-256 matches → Return cached path
+   │  └─ File missing OR hash mismatch → Download from GitHub Release
+   │       ├─ Download to .onnx.tmp
+   │       ├─ Verify SHA-256
+   │       ├─ Atomic rename to final filename
+   │       └─ Return path
+   └─ Any failure → Raise ModelNotFoundError with actionable message
+```
+
 ### Public API
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `get_edsr_model_path()` | `(scale, precision="fast", model_path=None) → Path` | Resolve model file path |
-| `list_available_models()` | `() → dict[str, dict]` | Summary of all models per scale |
+| `get_edsr_model_path()` | `(scale, precision="fast", model_path=None) → Path` | Resolve EDSR model file path |
+| `get_gfpgan_model_path()` | `(version="v1_4", model_path=None) → Path` | Resolve GFPGAN model file path |
+| `list_available_models()` | `() → dict[str, dict]` | Summary of all models (EDSR + GFPGAN) |
 
 ### Cache Directory & Structure
 
@@ -525,11 +563,12 @@ def _resolve_path(path_str: str | Path) -> Path:
 ~/.cache/clarify/models/
 ├── edsr_x2_full.onnx   (~160 MB, downloaded on first hq scale=2 use)
 ├── edsr_x3_full.onnx   (~160 MB, downloaded on first hq scale=3 use)
-└── edsr_x4_full.onnx   (~160 MB, downloaded on first hq scale=4 use)
+├── edsr_x4_full.onnx   (~160 MB, downloaded on first hq scale=4 use)
+└── gfpgan_v1_4.onnx    (~350 MB, downloaded on first face_restore use)
 ```
 
 - Controlled via `CLARIFY_CACHE_DIR` environment variable (default: `~/.cache/clarify/models`)
-- Created automatically on first hq use (`mkdir -p`)
+- Created automatically on first download (`mkdir -p`)
 - `.gitignore`d to prevent accidental commits
 
 ---

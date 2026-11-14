@@ -11,6 +11,7 @@ from .exceptions import (
 from .models import (
     Precision,
     get_edsr_model_path,
+    get_gfpgan_model_path,
     list_available_models,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "UnsupportedImageError",
     "enhance",
     "get_edsr_model_path",
+    "get_gfpgan_model_path",
     "list_available_models",
 ]
 
