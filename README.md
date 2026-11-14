@@ -56,21 +56,6 @@ enhance("photo.jpg", mode="ai", scale=2, precision="hq")
 # Air-gapped / offline: point to a pre-transferred local .onnx file
 enhance("photo.jpg", mode="ai", scale=2, precision="hq", model_path="/models/edsr_x2_full.onnx")
 ```
-
-### Important: EDSR Full models require a published GitHub Release
-
-The EDSR Full models (~160 MB each, x2/x3/x4) are NOT included in the wheel. They must be published as assets on a GitHub Release tag (e.g., `v0.4.0-models`) at:
-
-```
-https://github.com/skcode1/Clarify/releases/download/v0.4.0-models/
-```
-
-Until the release is published and the SHA-256 hashes are updated in `src/clarify/models.py`, calling `precision="hq"` will raise a clear `ModelNotFoundError` explaining how to proceed:
-
-- Replace the placeholder SHA-256 hash in `src/clarify/models.py` with the real hash, **or**
-- Pass a local `.onnx` file via `model_path="/path/to/model.onnx"`, **or**
-- Use `precision="fast"` for the bundled Baseline model.
-
 ---
 
 ## Face Restore (GFPGAN)
@@ -84,9 +69,6 @@ enhance("portrait.png", mode="face_restore", output_format="tiff")
 # Air-gapped / offline: point to a pre-transferred local .onnx file
 enhance("portrait.png", mode="face_restore", model_path="/models/gfpgan_v1_4.onnx")
 ```
-
-The GFPGAN model must be published as an asset on the same GitHub Release tag. Until published, `mode="face_restore"` will raise a clear error with remediation steps.
-
 ---
 
 ## Memory Safety on Large Images

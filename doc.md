@@ -242,7 +242,7 @@ clarify photo.jpg --mode ai --scale 2 --precision hq --model-path /models/edsr_x
 enhance("photo.jpg", mode="ai", scale=2, precision="hq", model_path="/models/custom_full.onnx")
 ```
 
-When `model_path` is provided, `clarify-ai` skips the download entirely and validates that the file exists locally. This works even if the SHA-256 placeholder in the registry has not been updated.
+When `model_path` is provided, `clarify-ai` skips the download entirely and validates that the file exists locally.
 
 ### Step-by-Step Walkthrough
 
@@ -377,13 +377,6 @@ Every downloaded model (EDSR Full or GFPGAN) is verified against its expected SH
 3. Compare against the registry entry for that model
 4. If match → atomically rename `.onnx.tmp` → final filename
 5. If mismatch → delete temp file, raise `ModelNotFoundError`
-
-**Placeholder hashes are REJECTED** — not accepted. If a SHA-256 entry still reads `REPLACE_WITH_ACTUAL_SHA256_FOR_...`, the model cannot be downloaded. The user gets a clear `ModelNotFoundError` explaining:
-- Replace the placeholder hash in `src/clarify/models.py` with the real hash from `sha256sum`, **or**
-- Pass a local `.onnx` file via `model_path`, **or**
-- Use `precision="fast"` (EDSR Baseline, bundled) for offline use.
-
-This prevents corrupted downloads, 404 HTML pages, or truncated files from being silently accepted as valid models.
 
 Download safety details:
 - Downloads always write to a `.tmp` file first
