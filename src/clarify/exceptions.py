@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 
 class ClarifyError(Exception):
@@ -15,7 +15,7 @@ class ClarifyError(Exception):
         message: str,
         *,
         code: Optional[str] = None,
-        context: Optional[dict] = None,
+        context: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -80,7 +80,7 @@ class ConfigurationError(ClarifyError, ValueError):
         self,
         message: str,
         *,
-        context: Optional[dict] = None,
+        context: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(message, code=self.code, context=context)
 
@@ -94,7 +94,7 @@ class InferenceError(ClarifyError):
         self,
         message: str,
         *,
-        context: Optional[dict] = None,
+        context: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(message, code=self.code, context=context)
 
@@ -108,6 +108,6 @@ class EncodingError(ClarifyError):
         self,
         message: str,
         *,
-        context: Optional[dict] = None,
+        context: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(message, code=self.code, context=context)

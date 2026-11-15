@@ -18,18 +18,18 @@ from .exceptions import (
 )
 
 __all__ = [
-    "enhance",
-    "health_check",
-    "MODEL_PRESETS",
-    "ModelArch",
     "DEFAULT_ARCH",
     "DEFAULT_SCALE",
-    "clear_session_cache",
+    "MODEL_PRESETS",
     "ClarifyError",
     "ConfigurationError",
     "ImageNotFoundError",
+    "ModelArch",
     "ModelNotFoundError",
     "UnsupportedImageError",
+    "clear_session_cache",
+    "enhance",
+    "health_check",
 ]
 
 __version__ = "0.4.0"

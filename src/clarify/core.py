@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import inspect
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import cv2
 import numpy as np
 import onnxruntime as ort  # type: ignore[import-untyped]
 
 from clarify.exceptions import (
-    ClarifyError,
     ConfigurationError,
     ImageNotFoundError,
     ModelNotFoundError,
@@ -73,7 +72,7 @@ MODEL_PRESETS: dict[ModelArch, ModelPreset] = {
     ),
 }
 
-DEFAULT_ARCH: ModelArch = "span"
+DEFAULT_ARCH: ModelArch = "edsr_baseline"
 DEFAULT_SCALE = 2
 
 # Global in-memory cache for ONNX Runtime InferenceSessions (per arch + scale)
@@ -127,7 +126,7 @@ def _model_file_for(arch: ModelArch, scale: int = 2) -> Path:
 
 def _get_session(arch: ModelArch = DEFAULT_ARCH, scale: int = DEFAULT_SCALE) -> ort.InferenceSession:
     """Retrieve or initialize an ONNX Runtime session keyed by (arch, scale)."""
-    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
+    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES  # noqa: PLW0602
 
     key = (arch, scale)
     if key not in _CACHED_SESSIONS:
@@ -163,7 +162,7 @@ def _get_session(arch: ModelArch = DEFAULT_ARCH, scale: int = DEFAULT_SCALE) -> 
 
 def clear_session_cache() -> None:
     """Clear all cached ONNX sessions (useful for testing / model reload)."""
-    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
+    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES  # noqa: PLW0602
     _CACHED_SESSIONS.clear()
     _CACHED_INPUT_NAMES.clear()
 
@@ -181,7 +180,7 @@ def _encode_and_save(
     """Encodes and saves the matrix with format-specific compression parameters."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
     fmt = out_format.lower().lstrip(".")
-    params: list = []
+    params = []
 
     if fmt in ("jpg", "jpeg"):
         clamped_q = max(1, min(100, int(quality)))
@@ -396,7 +395,7 @@ def _enhance_face_restore(img_bgr: np.ndarray) -> np.ndarray:
 # Health check
 # ---------------------------------------------------------------------------
 
-def health_check() -> dict:
+def health_check() -> dict[str, Any]:
     """Return runtime health metadata (providers, bundled models, cache state)."""
     available_providers = ort.get_available_providers()
     bundled_models = {

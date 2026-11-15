@@ -2,9 +2,9 @@ name: CI Test Suite
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, MCP ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, MCP ]
   workflow_dispatch:
 
 jobs:

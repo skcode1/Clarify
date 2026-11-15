@@ -30,7 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -111,7 +111,7 @@ def _validate_inputs(
 async def upscale_image(
     image_path: str,
     scale: int = 2,
-    arch: ModelArchLit = "span",
+    arch: ModelArchLit = "edsr_baseline",
     mode: EnhanceMode = "ai",
     output_format: OutputFormat = "png",
     quality: int = 95,
@@ -151,9 +151,9 @@ async def upscale_image(
         None,
         lambda: enhance(
             image=str(input_path),
-            mode=cast(EnhanceMode, mode),
-            scale=cast(Scale, scale),
-            arch=cast(ModelArch, arch),
+            mode=mode,
+            scale=scale,
+            arch=arch,
             output_format=output_format,
             quality=quality,
             strength=strength,
@@ -219,17 +219,18 @@ async def batch_upscale(
         try:
             resolved = _validate_inputs(image_path, scale, mode, output_format, arch)
             loop = asyncio.get_running_loop()
-            out_path = await loop.run_in_executor(
-                None,
-                lambda: enhance(
+
+            def _run_enhance() -> Path:
+                return enhance(
                     image=str(resolved),
-                    mode=cast(EnhanceMode, mode),
-                    scale=cast(Scale, scale),
-                    arch=cast(ModelArch, arch),
+                    mode=mode,
+                    scale=scale,
+                    arch=arch,
                     output_format=output_format,
                     quality=quality,
-                ),
-            )
+                )
+
+            out_path = await loop.run_in_executor(None, _run_enhance)
             entry["output_path"] = str(Path(out_path).resolve())
             entry["status"] = "ok"
         except (ClarifyError, ValueError, FileNotFoundError) as exc:

@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+
 from .core import enhance
 from .exceptions import ClarifyError
 
