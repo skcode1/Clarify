@@ -8,6 +8,17 @@ One function call. No internet after clone for default models. Sub-50 MB footpri
 
 </div>
 
+## The Problem It Solves
+
+Adding AI image upscaling to a Python project usually comes with heavy trade-offs:
+
+- **Massive Runtime Bloat:** Libraries like Real-ESRGAN and basicsr force you to install **2–4 GB+ of PyTorch, CUDA, and Torchvision dependencies**, turning simple scripts into bloated containers.
+- **Fragile First-Run Downloads:** Most tools fetch weights dynamically on first execution—breaking offline workflows, CI/CD pipelines, and air-gapped environments.
+- **Privacy & Cloud Costs:** Sending sensitive user photos to third-party upscaling APIs introduces recurring fees, rate limits, and privacy risks.
+- **Boilerplate Setup:** Writing tensor preprocessing, device selection (CUDA/CoreML/CPU), and tiled memory management from scratch wastes days of engineering time.
+
+**`clarify-ai` eliminates all of this:** you get local, hardware-accelerated AI super-resolution, face restoration, and classical image cleanup in a **sub-50 MB install** with zero PyTorch dependencies and one function call.
+
 ---
 
 ## What it does
