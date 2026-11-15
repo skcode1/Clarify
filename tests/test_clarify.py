@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -165,8 +166,8 @@ def test_denoise_strength_zero(sample_image: Path):
 
 
 def test_face_restore_missing_model_raises(sample_image: Path):
-    """Face restore without the bundled ONNX artifact raises ModelNotFoundError."""
-    with pytest.raises(ModelNotFoundError):
+    """Face restore without the bundled ONNX artifact raises ModelNotFoundError without network."""
+    with patch("clarify.models._download_file", side_effect=OSError("Network disabled in CI")), pytest.raises(ModelNotFoundError):
         enhance(sample_image, mode="face_restore")
 
 
