@@ -2,7 +2,7 @@
 
 # clarify-ai
 
-**Zero-config AI image enhancement and super-resolution for Python — run locally.**
+**Zero-config AI image enhancement and super-resolution for Python — run locally (Baseline branch with old technology).**
 
 One function call. No internet after clone for default models. Sub-50 MB footprint.
 
