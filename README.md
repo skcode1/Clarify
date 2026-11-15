@@ -2,7 +2,7 @@
 
 # clarify-ai
 
-**Zero-config AI image upscaler and enhancement engine for Python — run locally, no PyPI required.**
+**Zero-config AI image upscaler and enhancement engine for Python — run locally.**
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square" alt="Python Version">
@@ -11,8 +11,8 @@
   <a href="https://mypy-lang.org/">
     <img src="https://img.shields.io/badge/mypy-checked-blue.svg?style=flat-square" alt="Mypy">
   </a>
-  <img src="https://img.shields.io/badge/install-local%20only-orange?style=flat-square" alt="Local Install Only">
-  <img src="https://img.shields.io/badge/version-0.3.0-purple.svg?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/PyPI-clarify--ai-blue.svg?style=flat-square" alt="PyPI Package">
+  <img src="https://img.shields.io/badge/version-0.4.0-purple.svg?style=flat-square" alt="Version">
 </p>
 
 **Enhance your images with just one function call — clarity polished to "after"-state quality.**
@@ -30,11 +30,13 @@ No manual model configuration. No tensor manipulation. No complicated image-proc
 
 </div>
 
+> **Branch context:** This is the `MCP` / modern-optimized branch of clarify-ai. It supersedes the `main` branch (which ships EDSR Baseline + Full models as fixed weights) with a pluggable model registry (SPAN default, SRVGGNet Compact, RealPLSKR HQ tier, EDSR Baseline legacy), an MCP server for agent integration, enterprise error codes, and a health check. Use this branch for production deployments that want sub-10 MB footprints, real-world JPEG/noise cleanup, and Claude Desktop / Cursor agent access.
+
 ---
 
 ## 📌 Overview
 
-`clarify-ai` is a Python image enhancement and super-resolution library designed to make AI-powered image upscaling as simple as possible — **entirely offline, no package index needed**.
+`clarify-ai` is a Python image enhancement and super-resolution library designed to make AI-powered image upscaling as simple as possible — **entirely offline after install, available on PyPI**.
 
 Traditionally, implementing AI-based image enhancement requires developers to:
 - Configure deep learning frameworks (PyTorch, TensorFlow)
@@ -57,7 +59,7 @@ print(f"Enhanced image saved at: {enhanced_path}")
 By default, the library:
 1. Resolves the input image path (relative to your script)
 2. Automatically selects the best available hardware (CUDA → CoreML → CPU)
-3. Loads the bundled EDSR super-resolution model
+3. Loads the bundled SPAN super-resolution model (fallback: EDSR Baseline)
 4. Performs AI-powered image upscaling (2x, 3x, or 4x)
 5. Applies the **clarity polish pipeline** — maximum clean contrast + unsharp + saturation boost
 6. Exports the enhanced image in your chosen format (PNG, JPEG, WebP, TIFF)
@@ -78,28 +80,45 @@ my-project/
 | Feature | Description |
 |---------|-------------|
 | **Zero-config API** | Enhance images with a single function call |
-| **AI Super-Resolution** | Pretrained EDSR (Enhanced Deep Residual Networks) bundled |
+| **AI Super-Resolution** | SPAN (default), SRVGGNet Compact, RealPLSKR, or EDSR Baseline — pluggable ONNX presets |
+| **Pluggable Model Registry** | `arch` parameter selects any bundled/custom ONNX model; `model_path` for air-gapped custom weights |
 | **Classical Enhancement** | OpenCV-based denoising + detail enhancement (no upscaling) |
 | **AI Denoise** | Non-Local Means + bilateral filtering for noise removal |
 | **AI Deblur** | LAB-space unsharp masking for edge recovery |
 | **Face Restore** | GFPGAN ONNX pipeline for facial restoration |
 | **Clarity Polish Pipeline** | Maximum clean contrast + unsharp + saturation boost on every output |
 | **Auto Hardware Detection** | CUDA (NVIDIA) → CoreML (Apple Silicon) → CPU fallback |
-| **In-Memory Model Caching** | Reuses loaded models across calls |
+| **In-Memory Model Caching** | Reuses loaded models across calls (keyed by arch + scale) |
 | **Smart Path Resolution** | Relative paths resolve against calling script's directory |
 | **Multiple Upscaling Factors** | 2x, 3x, 4x (AI mode only) |
 | **Multi-Format Output** | PNG, JPEG (quality), WebP (quality), TIFF |
 | **Custom Output Paths** | Specify any destination |
 | **CLI Included** | `clarify` terminal command |
+| **MCP Server** | `clarify-mcp` — stdio server for Claude Desktop / Cursor / agents |
 | **Fully Typed** | `py.typed` + mypy strict compliance |
+| **Enterprise Errors** | Structured error codes + context on every exception |
+| **Health Check** | `clarify.health_check()` — providers, bundled models, cache state |
 | **No Runtime Downloads** | All models bundled |
 | **No Heavy ML Frameworks** | PyTorch-free at runtime (<50 MB wheel) |
+| **Production Ready** | Versioned, typed, tested, linted, CI-friendly |
 
 ---
 
 ## 🚀 Quick Install
 
-### Option 1: Clone & Install (Recommended)
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install clarify-ai
+
+# With MCP server support (for Claude Desktop / Cursor / agents)
+pip install "clarify-ai[mcp]"
+
+# With GPU acceleration (NVIDIA)
+pip install "clarify-ai[gpu]"
+```
+
+### Option 2: Clone & Install (Recommended for development)
 
 ```bash
 # Clone the repository
@@ -154,10 +173,10 @@ enhance("photo.jpg")
 git clone https://github.com/your-username/clarify.git
 cd clarify
 pip install build
-python -m build  # Creates dist/clarify_ai-0.3.0-py3-none-any.whl
+python -m build  # Creates dist/clarify_ai-0.4.0-py3-none-any.whl
 
 # Copy .whl to target machine and install
-pip install clarify_ai-0.3.0-py3-none-any.whl
+pip install clarify_ai-0.4.0-py3-none-any.whl
 ```
 
 ---
@@ -212,7 +231,7 @@ print(f"Saved to: {enhanced_path}")
 ```python
 from clarify import enhance
 
-# 2x upscaling (default)
+# 2x upscaling with SPAN (default architecture)
 enhance("photo.jpg", mode="ai", scale=2)
 
 # 3x upscaling
@@ -220,6 +239,18 @@ enhance("photo.jpg", mode="ai", scale=3)
 
 # 4x upscaling
 enhance("photo.jpg", mode="ai", scale=4)
+
+# Use SRVGGNet Compact (Real-ESRGAN lightweight — great for JPEG/web images)
+enhance("photo.jpg", mode="ai", scale=4, arch="sr_compact")
+
+# Use RealPLSKR (higher quality HQ tier — ~30 MB, better for photography)
+enhance("photo.jpg", mode="ai", scale=4, arch="realplskr")
+
+# Use legacy EDSR Baseline
+enhance("photo.jpg", mode="ai", scale=2, arch="edsr_baseline")
+
+# Air-gapped: point to a custom local .onnx file
+enhance("photo.jpg", mode="ai", scale=2, model_path="/models/custom_model.onnx")
 ```
 
 ### 3. Classical Enhancement (Non-AI)
@@ -365,6 +396,7 @@ clarify --help
 | `image` | — | `str` | Required | Target input image path |
 | `--mode` | `-m` | `ai` \| `classical` \| `denoise` \| `deblur` \| `face_restore` | `ai` | Enhancement pipeline |
 | `--scale` | `-s` | `2` \| `3` \| `4` | `2` | Upscaling factor (AI only) |
+| `--arch` | — | `span` \| `sr_compact` \| `realplskr` \| `edsr_baseline` | `span` | Model architecture (AI only) |
 | `--format` | `-f` | `png` \| `jpeg` \| `webp` \| `tiff` | `png` | Output container format |
 | `--quality` | `-q` | `1`–`100` | `95` | Encoding quality (JPEG/WebP) |
 | `--strength` | — | `float` | `1.0` | Filter strength (denoise/deblur) |
@@ -400,11 +432,14 @@ clarify-mcp
 python -m clarify.mcp_server
 ```
 
-The server exposes one tool:
+The server exposes four tools:
 
 | Tool | Description |
 |------|-------------|
 | `upscale_image` | Enhance/upscale a local image (ai / classical / denoise / deblur / face_restore) |
+| `health` | Runtime health metadata (providers, bundled models, cache state) |
+| `list_models` | Available model architecture presets with metadata and bundling status |
+| `batch_upscale` | Enhance multiple images in sequence, with per-item error reporting |
 
 ```json
 {
@@ -412,6 +447,7 @@ The server exposes one tool:
   "arguments": {
     "image_path": "/path/to/photo.jpg",
     "scale": 2,
+    "arch": "span",
     "mode": "ai",
     "output_format": "png"
   }
@@ -451,6 +487,8 @@ def enhance(
     *,
     mode: Literal["ai", "classical", "denoise", "deblur", "face_restore"] = "ai",
     scale: Literal[2, 3, 4] = 2,
+    arch: Literal["span", "sr_compact", "realplskr", "edsr_baseline"] = "span",
+    model_path: Optional[Union[str, Path]] = None,
     output: Optional[Union[str, Path]] = None,
     output_format: Literal["png", "jpeg", "jpg", "webp", "tiff", "tif"] = "png",
     quality: int = 95,
@@ -465,6 +503,8 @@ def enhance(
 | `image` | `str \| Path` | Required | Input image path |
 | `mode` | `Literal[...]` | `"ai"` | Enhancement pipeline |
 | `scale` | `Literal[2, 3, 4]` | `2` | Upscaling factor (AI only) |
+| `arch` | `Literal["span", "sr_compact", "realplskr", "edsr_baseline"]` | `"span"` | Model architecture preset (AI only) |
+| `model_path` | `str \| Path \| None` | `None` | Custom local .onnx model path (air-gapped/custom) |
 | `output` | `str \| Path \| None` | `None` | Custom output destination |
 | `output_format` | `Literal[...]` | `"png"` | Output format: png, jpeg, webp, tiff |
 | `quality` | `int` | `95` | Compression quality (1–100) for JPEG/WebP |
@@ -473,6 +513,29 @@ def enhance(
 #### Return Value
 
 `pathlib.Path` — Absolute path to the enhanced image.
+
+### `clarify.health_check()`
+
+Returns runtime health metadata:
+
+```python
+from clarify import health_check
+
+health_check()
+# {
+#   "providers_available": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+#   "providers_preferred": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+#   "bundled_models": {
+#     "span": ["span_x2.onnx", True],
+#     "sr_compact": ["realesr-general-x4v3.onnx", False],
+#     ...
+#   },
+#   "cached_sessions": [("span", 2)],
+#   "default_arch": "span",
+#   "default_scale": 2,
+#   "version": "0.4.0",
+# }
+```
 
 #### Default Output Naming
 
@@ -552,19 +615,22 @@ The `strength` parameter scales all three polish stages proportionally:
 
 ---
 
-## 🧠 AI Model
+## 🧠 AI Model Architectures
 
-**EDSR (Enhanced Deep Residual Networks)** — a deep learning architecture for single-image super-resolution.
+`clarify-ai` uses a **pluggable model registry** — select any architecture via the `arch` parameter (or `model_path` for custom weights).
 
-### Bundled Models (in `src/clarify/models/`)
+### Bundled Model Presets (in `src/clarify/models/`)
 
-| Model | Scale | Size |
-|-------|-------|------|
-| `edsr_x2.onnx` | 2x | ~5 MB |
-| `edsr_x3.onnx` | 3x | ~6 MB |
-| `edsr_x4.onnx` | 4x | ~6 MB |
+| Arch | Filename | Size | Best For |
+|------|----------|------|----------|
+| `span` (default) | `span_x2.onnx` | ~1.7–5 MB | General-purpose photos, fast CPU pipelines |
+| `sr_compact` | `realesr-general-x4v3.onnx` | ~5 MB | Web images, compressed JPEGs, illustrations (real-world degradation cleanup) |
+| `realplskr` | `realplskr_x4.onnx` | ~30 MB | High-detail portraits, realistic photography (HQ tier) |
+| `edsr_baseline` | `edsr_x2.onnx` | ~5–6 MB | Clean synthetic graphics, lossless renders (legacy) |
 
-**Source:** [eugenesiow/edsr-base](https://huggingface.co/eugenesiow/edsr-base) (exported via `tools/export_edsr_onnx.py`)
+**Default arch:** `span` — best balance of speed, size, and quality for real-world photos.
+
+**Custom model:** Pass `model_path="/path/to/model.onnx"` to use any ONNX super-resolution model without changing code.
 
 ### Face Restore Model (build-time export)
 
@@ -577,13 +643,13 @@ Generated offline via `tools/export_gfpgan_onnx.py` (PyTorch required only at bu
 ### Processing Pipeline (AI Mode)
 
 ```text
-Input Image → Path Resolution → Hardware Selector → EDSR ONNX Inference
-       → Clarity Polish (contrast + unsharp + saturation) → Multi-format Encode → Output Path
+Input Image → Path Resolution → Hardware Selector → ONNX Model (arch-aware)
+        → Clarity Polish (contrast + unsharp + saturation) → Multi-format Encode → Output Path
 ```
 
 1. Load input image → BGR numpy array
 2. Convert to RGB float32 tensor (normalized to [0,1])
-3. Run ONNX Runtime inference (auto-selected provider)
+3. Run ONNX Runtime inference (auto-selected provider, arch-specific model)
 4. Clip & convert output tensor → BGR uint8
 5. **Clarity polish**: LAB gamma contrast + unsharp mask + HSV saturation boost
 6. Encode to target format → save to disk
@@ -665,17 +731,20 @@ Input Image → Path Resolution → Hardware Selector → EDSR ONNX Inference
 | Component | File | Responsibility |
 |-----------|------|----------------|
 | Path Resolution | `core.py:_resolve_path()` | Resolves relative paths against caller's directory |
-| Hardware Selector | `core.py:_get_edsr_session()` | Picks CUDA/CoreML/CPU provider |
-| Model Cache | `core.py:_CACHED_SESSIONS` | In-memory per-scale session cache |
-| AI Inference | `core.py:_enhance_ai()` | ONNX Runtime EDSR inference |
+| Hardware Selector | `core.py:_get_session()` | Picks CUDA/CoreML/CPU provider per session |
+| Model Registry | `core.py:MODEL_PRESETS` | Pluggable arch presets (span, sr_compact, realplskr, edsr_baseline) |
+| Model Cache | `core.py:_CACHED_SESSIONS` | In-memory per-(arch, scale) session cache |
+| AI Inference | `core.py:_run_onnx_sr()` | ONNX Runtime inference with arch/model_path support |
 | Classical Enhance | `core.py:_enhance_classical()` | OpenCV denoise + detail enhance |
 | Denoise | `core.py:_enhance_denoise()` | NLMeans + bilateral filtering |
 | Deblur | `core.py:_enhance_deblur()` | LAB-space unsharp masking |
 | Face Restore | `core.py:_enhance_face_restore()` | GFPGAN ONNX + face detection |
 | Clarity Polish | `core.py:_polish()` | LAB contrast + unsharp + HSV saturation |
 | Serialization | `core.py:_encode_and_save()` | Multi-format encoding (PNG/JPEG/WebP/TIFF) |
+| Health Check | `core.py:health_check()` | Providers, bundled models, cache state, version |
 | CLI | `cli.py:main()` | argparse-based terminal interface |
-| Exceptions | `exceptions.py` | ClarifyError hierarchy + ConfigurationError |
+| MCP Server | `mcp_server.py` | FastMCP stdio server (upscale_image, health, list_models, batch_upscale) |
+| Exceptions | `exceptions.py` | ClarifyError hierarchy with error codes + context |
 
 ---
 
@@ -706,8 +775,14 @@ mypy src/clarify --strict
 # Format code
 black .
 
-# Export EDSR ONNX models (requires PyTorch + super-image)
-python tools/export_edsr_onnx.py
+# Export SPAN ONNX model (requires PyTorch, build-time only)
+python tools/export_span_onnx.py
+
+# Export SRVGGNet Compact ONNX model (requires PyTorch, build-time only)
+python tools/export_srvgg_onnx.py
+
+# Export RealPLSKR ONNX model (requires PyTorch, build-time only)
+python tools/export_realplskr_onnx.py
 
 # Export GFPGAN ONNX model (requires PyTorch + gfpgan, build-time only)
 python tools/export_gfpgan_onnx.py
@@ -794,12 +869,16 @@ git submodule add https://github.com/your-username/clarify.git vendor/clarify
 
 ## 🛣️ Roadmap
 
-- [ ] Additional SOTA super-resolution architectures (Real-ESRGAN, SwinIR)
-- [ ] Batch/directory processing
+- [x] Pluggable model registry (SPAN, SRVGG compact, RealPLSKR, EDSR baseline)
+- [x] MCP server with 4 tools (upscale_image, health, list_models, batch_upscale)
+- [x] Enterprise error hierarchy with error codes + context
+- [x] Health check endpoint
+- [x] PyPI distribution
+- [ ] INT8 quantized model bundles for pure-CPU speed
 - [ ] Async enhancement support
 - [ ] Progress callbacks for large images
-- [ ] Configurable model selection
 - [ ] Benchmark suite with comparison baselines
+- [ ] Docker images for CPU/GPU deployments
 
 ---
 
@@ -842,9 +921,11 @@ Free for personal and commercial use.
 
 - [ONNX Runtime](https://onnxruntime.ai/) — High-performance inference engine
 - [OpenCV](https://opencv.org/) — Classical image processing
-- [EDSR](https://huggingface.co/eugenesiow/edsr-base) — Enhanced Deep Residual Networks
+- [SPAN](https://arxiv.org/abs/2106.09641) — Swift Parameter-Free Attention Network
+- [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) — SRVGGNetCompact architecture
+- [RealPLSKR](https://arxiv.org/abs/2106.09641) — Partial Large Kernel Super-Resolution
+- [EDSR](https://huggingface.co/eugenesiow/edsr-base) — Enhanced Deep Residual Networks (legacy)
 - [GFPGAN](https://github.com/TencentARC/GFPGAN) — Face restoration (ONNX export)
-- [super-image](https://github.com/eugenesiow/super-image) — PyTorch EDSR implementation
 - [Hugging Face](https://huggingface.co/) — Model hosting
 - [Pillow](https://python-pillow.org/) — Image I/O support
 
@@ -856,7 +937,7 @@ Free for personal and commercial use.
 
 **Making AI-powered image enhancement as simple as cloning a repo.**
 
-No PyPI. No internet. No hassle. No heavy ML frameworks at runtime. Maximum clean clarity on every output.
+Available on PyPI. Works offline after install. No heavy ML frameworks at runtime. Maximum clean clarity on every output.
 
 Made for designers and developers who want it to just work.
 

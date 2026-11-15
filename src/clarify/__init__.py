@@ -1,6 +1,14 @@
 """clarify-ai - Ultra-lightweight AI and classical image enhancement."""
 
-from .core import enhance
+from .core import (
+    DEFAULT_ARCH,
+    DEFAULT_SCALE,
+    MODEL_PRESETS,
+    ModelArch,
+    clear_session_cache,
+    enhance,
+    health_check,
+)
 from .exceptions import (
     ClarifyError,
     ConfigurationError,
@@ -11,6 +19,12 @@ from .exceptions import (
 
 __all__ = [
     "enhance",
+    "health_check",
+    "MODEL_PRESETS",
+    "ModelArch",
+    "DEFAULT_ARCH",
+    "DEFAULT_SCALE",
+    "clear_session_cache",
     "ClarifyError",
     "ConfigurationError",
     "ImageNotFoundError",
@@ -18,4 +32,4 @@ __all__ = [
     "UnsupportedImageError",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

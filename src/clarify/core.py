@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import inspect
+import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional, Union
 
@@ -18,13 +20,70 @@ from clarify.exceptions import (
     UnsupportedImageError,
 )
 
+logger = logging.getLogger("clarify")
+
 OutputFormat = Literal["png", "jpeg", "jpg", "webp", "tiff", "tif"]
 EnhanceMode = Literal["ai", "classical", "denoise", "deblur", "face_restore"]
+ModelArch = Literal["span", "sr_compact", "realplskr", "edsr_baseline"]
 
-# Global in-memory cache for the ONNX Runtime InferenceSession (per scale)
-_CACHED_SESSIONS: dict[int, ort.InferenceSession] = {}
-_CACHED_INPUT_NAMES: dict[int, str] = {}
+# ---------------------------------------------------------------------------
+# Model registry presets
+# ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class ModelPreset:
+    """Metadata for a supported super-resolution architecture."""
+
+    arch: ModelArch
+    filename: str
+    description: str
+    approx_size_mb: float
+    best_for: str
+    default_scale: int = 2
+
+
+MODEL_PRESETS: dict[ModelArch, ModelPreset] = {
+    "span": ModelPreset(
+        arch="span",
+        filename="span_x2.onnx",
+        description="Swift Parameter-Free Attention Network — transformer-level detail at ~1.7–5 MB.",
+        approx_size_mb=3.0,
+        best_for="General-purpose photos and fast CPU pipelines.",
+    ),
+    "sr_compact": ModelPreset(
+        arch="sr_compact",
+        filename="realesr-general-x4v3.onnx",
+        description="Real-ESRGAN SRVGGNetCompact — real-world blind degradation cleanup (JPEG, blur, noise).",
+        approx_size_mb=5.0,
+        best_for="Web images, compressed JPEGs, and illustrations.",
+    ),
+    "realplskr": ModelPreset(
+        arch="realplskr",
+        filename="realplskr_x4.onnx",
+        description="Partial Large Kernel Super-Resolution — superior HQ tier at ~30 MB (FP16/INT8 quantizable).",
+        approx_size_mb=30.0,
+        best_for="High-detail portraits and realistic photography.",
+    ),
+    "edsr_baseline": ModelPreset(
+        arch="edsr_baseline",
+        filename="edsr_x2.onnx",
+        description="Legacy EDSR Baseline — bundled default, clean synthetic inputs only.",
+        approx_size_mb=5.5,
+        best_for="Clean synthetic graphics or lossless renders (legacy).",
+    ),
+}
+
+DEFAULT_ARCH: ModelArch = "span"
+DEFAULT_SCALE = 2
+
+# Global in-memory cache for ONNX Runtime InferenceSessions (per arch + scale)
+_CACHED_SESSIONS: dict[tuple[ModelArch, int], ort.InferenceSession] = {}
+_CACHED_INPUT_NAMES: dict[tuple[ModelArch, int], str] = {}
+
+
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
 
 def _resolve_path(path_str: Union[str, Path]) -> Path:
     """Resolve file paths relative to caller frame or current directory."""
@@ -45,35 +104,73 @@ def _resolve_path(path_str: Union[str, Path]) -> Path:
     return (Path.cwd() / raw).resolve()
 
 
-def _get_model_path(scale: int = 2) -> Path:
-    """Locate bundled ONNX model file within package directory."""
-    model_file = Path(__file__).parent / "models" / f"edsr_x{scale}.onnx"
+def _models_dir() -> Path:
+    """Return the directory containing bundled ONNX model files."""
+    return Path(__file__).parent / "models"
+
+
+def _model_file_for(arch: ModelArch, scale: int = 2) -> Path:
+    """Resolve the bundled model file for a given architecture/scale."""
+    preset = MODEL_PRESETS[arch]
+    model_file = _models_dir() / preset.filename
     if not model_file.is_file():
-        raise ModelNotFoundError(f"Model file not found at: {model_file}")
+        raise ModelNotFoundError(
+            f"Model file not found for arch='{arch}' scale={scale} at: {model_file}. "
+            f"Pass a local .onnx via model_path or bundle the file under {_models_dir()}."
+        )
     return model_file
 
 
-def _get_edsr_session(scale: int = 2) -> ort.InferenceSession:
-    """Retrieve or initialize the ONNX Runtime session for a given scale."""
+# ---------------------------------------------------------------------------
+# Session management
+# ---------------------------------------------------------------------------
+
+def _get_session(arch: ModelArch = DEFAULT_ARCH, scale: int = DEFAULT_SCALE) -> ort.InferenceSession:
+    """Retrieve or initialize an ONNX Runtime session keyed by (arch, scale)."""
     global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
 
-    if scale not in _CACHED_SESSIONS:
-        model_path = _get_model_path(scale=scale)
+    key = (arch, scale)
+    if key not in _CACHED_SESSIONS:
+        model_path = _model_file_for(arch=arch, scale=scale)
 
         available_providers = ort.get_available_providers()
         providers = [
-            p for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
+            p
+            for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
             if p in available_providers
         ]
 
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.intra_op_num_threads = 1
+        sess_options.inter_op_num_threads = 1
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
-        _CACHED_SESSIONS[scale] = ort.InferenceSession(str(model_path), sess_options, providers=providers)
-        _CACHED_INPUT_NAMES[scale] = _CACHED_SESSIONS[scale].get_inputs()[0].name
+        logger.info(
+            "Loading ONNX session: arch=%s scale=%s model=%s providers=%s",
+            arch,
+            scale,
+            model_path,
+            providers,
+        )
 
-    return _CACHED_SESSIONS[scale]
+        session = ort.InferenceSession(str(model_path), sess_options, providers=providers)
+        _CACHED_SESSIONS[key] = session
+        _CACHED_INPUT_NAMES[key] = session.get_inputs()[0].name
 
+    return _CACHED_SESSIONS[key]
+
+
+def clear_session_cache() -> None:
+    """Clear all cached ONNX sessions (useful for testing / model reload)."""
+    global _CACHED_SESSIONS, _CACHED_INPUT_NAMES
+    _CACHED_SESSIONS.clear()
+    _CACHED_INPUT_NAMES.clear()
+
+
+# ---------------------------------------------------------------------------
+# Encoding / saving
+# ---------------------------------------------------------------------------
 
 def _encode_and_save(
     img_bgr: np.ndarray,
@@ -84,7 +181,7 @@ def _encode_and_save(
     """Encodes and saves the matrix with format-specific compression parameters."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
     fmt = out_format.lower().lstrip(".")
-    params = []
+    params: list = []
 
     if fmt in ("jpg", "jpeg"):
         clamped_q = max(1, min(100, int(quality)))
@@ -113,27 +210,23 @@ def _encode_and_save(
     return final_output_path
 
 
-def _polish(img_bgr: np.ndarray, strength: float = 1.0) -> np.ndarray:
-    """Polish pipeline: maximum clean contrast + unsharp + saturation boost.
+# ---------------------------------------------------------------------------
+# Polish
+# ---------------------------------------------------------------------------
 
-    Pushes clarity to the highest clean level before halo/artifact thresholds.
-    Tuned so AI mode at strength=2.0 produces contrast=1.15, unsharp=1.7, sat=1.15
-    — the greatest values that remain artifact-free on portrait/beauty imagery.
-    """
+def _polish(img_bgr: np.ndarray, strength: float = 1.0) -> np.ndarray:
+    """Clarity polish: LAB contrast + unsharp mask + HSV saturation boost."""
     result = img_bgr
 
-    # Aggressive but clean contrast lift via LAB gamma curve
     lab = cv2.cvtColor(result, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
     l = np.clip(l.astype(np.float32) * (1.0 + 0.075 * strength), 0, 255).astype(np.uint8)
     result = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
-    # Strong unsharp mask for edge definition (tuned to stay below halo threshold)
     blurred = cv2.GaussianBlur(result, (0, 0), sigmaX=0.8)
     result = cv2.addWeighted(result, 1.0 + 0.35 * strength, blurred, -0.35 * strength, 0)
     result = np.clip(result, 0, 255).astype(np.uint8)
 
-    # Rich saturation boost in HSV
     hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
     s = np.clip(s.astype(np.float32) * (1.0 + 0.075 * strength), 0, 255).astype(np.uint8)
@@ -142,10 +235,40 @@ def _polish(img_bgr: np.ndarray, strength: float = 1.0) -> np.ndarray:
     return result
 
 
-def _enhance_ai(img_bgr: np.ndarray, scale: int = 2, polish: bool = True) -> np.ndarray:
-    """Super-resolution reconstruction via ONNX Runtime with clarity polish."""
-    session = _get_edsr_session(scale=scale)
-    input_name = session.get_inputs()[0].name
+# ---------------------------------------------------------------------------
+# Inference paths
+# ---------------------------------------------------------------------------
+
+def _run_onnx_sr(
+    img_bgr: np.ndarray,
+    arch: ModelArch = DEFAULT_ARCH,
+    scale: int = DEFAULT_SCALE,
+    model_path: Optional[Union[str, Path]] = None,
+) -> np.ndarray:
+    """Run super-resolution inference through ONNX Runtime.
+
+    If ``model_path`` is provided it takes precedence over the bundled preset.
+    """
+    input_name: str
+    session: ort.InferenceSession
+
+    if model_path is not None:
+        mp = Path(model_path)
+        if not mp.is_file():
+            raise ModelNotFoundError(f"Custom model file not found: {mp}")
+        available_providers = ort.get_available_providers()
+        providers = [
+            p
+            for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
+            if p in available_providers
+        ]
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        session = ort.InferenceSession(str(mp), sess_options, providers=providers)
+        input_name = session.get_inputs()[0].name
+    else:
+        session = _get_session(arch=arch, scale=scale)
+        input_name = _CACHED_INPUT_NAMES[(arch, scale)]
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     blob = np.ascontiguousarray(np.transpose(img_rgb, (2, 0, 1))[np.newaxis, ...])
@@ -154,10 +277,26 @@ def _enhance_ai(img_bgr: np.ndarray, scale: int = 2, polish: bool = True) -> np.
     out_tensor = np.clip(out_tensor * 255.0, 0, 255).astype(np.uint8)
     out_rgb = np.transpose(out_tensor, (1, 2, 0))
     result = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+    return result  # type: ignore[no-any-return]
 
+
+def _enhance_ai(
+    img_bgr: np.ndarray,
+    scale: int = DEFAULT_SCALE,
+    arch: ModelArch = DEFAULT_ARCH,
+    model_path: Optional[Union[str, Path]] = None,
+    polish: bool = True,
+) -> np.ndarray:
+    """Super-resolution reconstruction via ONNX Runtime with clarity polish."""
+    result = _run_onnx_sr(
+        img_bgr,
+        arch=arch,
+        scale=scale,
+        model_path=model_path,
+    )
     if polish:
         result = _polish(result, strength=2.0)
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def _enhance_classical(img_bgr: np.ndarray) -> np.ndarray:
@@ -216,7 +355,7 @@ def _restore_face_patch(face_rgb_512: np.ndarray, session: ort.InferenceSession)
 
 def _enhance_face_restore(img_bgr: np.ndarray) -> np.ndarray:
     """Detects and restores facial areas, then blends back into the image."""
-    model_path = Path(__file__).parent / "models" / "gfpgan_v1_4.onnx"
+    model_path = _models_dir() / "gfpgan_v1_4.onnx"
     if not model_path.is_file():
         raise ModelNotFoundError(f"Face restore model missing: {model_path}")
 
@@ -253,11 +392,42 @@ def _enhance_face_restore(img_bgr: np.ndarray) -> np.ndarray:
     return _polish(result, strength=0.4)
 
 
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+def health_check() -> dict:
+    """Return runtime health metadata (providers, bundled models, cache state)."""
+    available_providers = ort.get_available_providers()
+    bundled_models = {
+        arch: (preset.filename, (_models_dir() / preset.filename).is_file())
+        for arch, preset in MODEL_PRESETS.items()
+    }
+    return {
+        "providers_available": available_providers,
+        "providers_preferred": [
+            p for p in ["CUDAExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]
+            if p in available_providers
+        ],
+        "bundled_models": bundled_models,
+        "cached_sessions": list(_CACHED_SESSIONS.keys()),
+        "default_arch": DEFAULT_ARCH,
+        "default_scale": DEFAULT_SCALE,
+        "version": "0.4.0",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def enhance(
     image: Union[str, Path],
     *,
     mode: EnhanceMode = "ai",
-    scale: Literal[2, 3, 4] = 2,
+    scale: int = DEFAULT_SCALE,
+    arch: ModelArch = DEFAULT_ARCH,
+    model_path: Optional[Union[str, Path]] = None,
     output: Optional[Union[str, Path]] = None,
     output_format: OutputFormat = "png",
     quality: int = 95,
@@ -269,6 +439,8 @@ def enhance(
         image: Local filepath to source image.
         mode: Processing algorithm: 'ai', 'classical', 'denoise', 'deblur', 'face_restore'.
         scale: Upscaling factor (2, 3, 4) for 'ai' mode.
+        arch: Model architecture preset ('span', 'sr_compact', 'realplskr', 'edsr_baseline').
+        model_path: Optional explicit path to a custom .onnx model file (air-gapped / custom).
         output: Explicit destination path. If None, saves next to source.
         output_format: Target file format ('png', 'jpeg', 'webp', 'tiff').
         quality: Compression quality (1-100) for JPEG and WebP.
@@ -289,7 +461,17 @@ def enhance(
     if mode == "ai":
         if scale not in (2, 3, 4):
             raise ConfigurationError(f"Invalid scale '{scale}' for AI mode. Use 2, 3, or 4.")
-        result = _enhance_ai(img_bgr, scale=scale, polish=True)
+        if arch not in MODEL_PRESETS:
+            raise ConfigurationError(
+                f"Invalid arch '{arch}'. Choose from: {', '.join(MODEL_PRESETS)}."
+            )
+        result = _enhance_ai(
+            img_bgr,
+            scale=scale,
+            arch=arch,
+            model_path=model_path,
+            polish=True,
+        )
     elif mode == "classical":
         result = _enhance_classical(img_bgr)
     elif mode == "denoise":
@@ -299,7 +481,9 @@ def enhance(
     elif mode == "face_restore":
         result = _enhance_face_restore(img_bgr)
     else:
-        raise ConfigurationError(f"Invalid mode '{mode}'. Choose 'ai', 'classical', 'denoise', 'deblur', or 'face_restore'.")
+        raise ConfigurationError(
+            f"Invalid mode '{mode}'. Choose 'ai', 'classical', 'denoise', 'deblur', or 'face_restore'."
+        )
 
     if output:
         dest_candidate = Path(output).expanduser()

@@ -1,6 +1,6 @@
 # clarify-ai: Technical Architecture & Design Documentation
 
-> **Zero-config AI image super-resolution via ONNX Runtime** — Production-grade, local-first, offline-ready.
+> **Zero-config AI image super-resolution via ONNX Runtime** — Production-grade, local-first, offline-ready. Pluggable model registry: SPAN (default), SRVGGNet Compact, RealPLSKR, EDSR Baseline — all sub-50 MB, zero PyTorch at runtime. Includes a Model Context Protocol (MCP) server for agent integration.
 
 ---
 
@@ -19,9 +19,10 @@
 7. [Reliability & Correctness](#reliability--correctness)
 8. [Deployment Scenarios](#deployment-scenarios)
 9. [Extensibility Points](#extensibility-points)
-10. [Competitive Positioning](#competitive-positioning)
-11. [Value Proposition](#value-proposition)
-12. [Architecture Summary](#architecture-summary)
+10. [MCP Server](#mcp-server)
+11. [Competitive Positioning](#competitive-positioning)
+12. [Value Proposition](#value-proposition)
+13. [Architecture Summary](#architecture-summary)
 
 ---
 
@@ -73,11 +74,12 @@ Traditional Approach:          clarify-ai Approach:
 │                    ┌─────────▼───────────▼───────────▼────────┐       │
 │                    │         ONNX RUNTIME EXECUTION ENGINE     │       │
 │                    │  ┌────────────────────────────────────┐   │       │
-│                    │  │      EDSR SUPER-RESOLUTION         │   │       │
-│                    │  │  (Enhanced Deep Residual Networks) │   │       │
-│                    │  │  • 2x / 3x / 4x scale models       │   │       │
-│                    │  │  • Per-scale session caching       │   │       │
-│                    │  │  • Graph optimization (ORT_ENABLE) │   │       │
+│                    │  │      PLUGGABLE MODEL REGISTRY          │   │       │
+│                    │  │  (SPAN / SRVGG Compact / RealPLSKR     │   │       │
+│                    │  │   / EDSR Baseline ONNX presets)        │   │       │
+│                    │  │  • Per-(arch, scale) session caching   │   │       │
+│                    │  │  • Graph optimization (ORT_ENABLE_ALL) │   │       │
+│                    │  │  • Custom model_path support           │   │       │
 │                    │  └────────────────────────────────────┘   │       │
 │                    └────────────────────────────────────────────┘       │
 │                                                                         │
@@ -88,21 +90,23 @@ Traditional Approach:          clarify-ai Approach:
 
 ## Core Technology Deep Dive
 
-### 1. EDSR (Enhanced Deep Residual Networks)
+### 1. Pluggable Model Registry
 
-| Aspect | Implementation |
-|--------|----------------|
-| **Architecture** | 32 residual blocks, 256 filters, no batch norm (EDSR-baseline) |
-| **Training Source** | [eugenesiow/edsr-base](https://huggingface.co/eugenesiow/edsr-base) — DIV2K dataset |
-| **Export Pipeline** | PyTorch → ONNX (opset 14) with dynamic axes for variable input sizes |
-| **Scales Bundled** | 2× (5.2 MB), 3× (5.9 MB), 4× (5.8 MB) — all in `src/clarify/models/` |
-| **Precision** | FP32 (quantization-ready for future optimization) |
+`clarify-ai` uses a pluggable model registry (`core.py:MODEL_PRESETS`) that lets you select any ONNX super-resolution architecture via the `arch` parameter, or supply a custom `model_path`.
 
-**Why EDSR?**
-- Proven SOTA baseline for single-image super-resolution
-- No batch norm → easier ONNX export, deterministic inference
-- Lightweight enough for CPU inference (~200-400ms on 256² input)
-- Apache-2.0 compatible licensing via Hugging Face
+| Arch | Filename | Approx Size | Best For |
+|------|----------|-------------|----------|
+| `span` (default) | `span_x2.onnx` | ~1.7–5 MB | General-purpose photos, fast CPU pipelines |
+| `sr_compact` | `realesr-general-x4v3.onnx` | ~5 MB | Web images, compressed JPEGs, illustrations |
+| `realplskr` | `realplskr_x4.onnx` | ~30 MB | High-detail portraits, realistic photography (HQ tier) |
+| `edsr_baseline` | `edsr_x2.onnx` | ~5–6 MB | Clean synthetic graphics, lossless renders (legacy) |
+
+**Model Selection Order:**
+1. `model_path` argument (if provided) → validate + use directly (air-gapped/custom)
+2. `arch` preset → bundled model from `src/clarify/models/`
+3. Default → `span` at 2× scale
+
+**Session Cache:** `_CACHED_SESSIONS: dict[tuple[arch, scale], InferenceSession]` — sessions are keyed by architecture and scale, so different models for the same scale coexist without collision.
 
 ---
 
@@ -125,7 +129,7 @@ sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_AL
 **Key Design Decisions:**
 - **No PyTorch/TensorFlow runtime** — ONNX Runtime is ~50 MB vs 2+ GB
 - **Dynamic axes** — Single model handles any input resolution (no tiling needed for typical images)
-- **Per-scale session caching** — `_CACHED_SESSIONS: dict[int, InferenceSession]` avoids reload on repeated calls
+- **Per-(arch, scale) session caching** — `_CACHED_SESSIONS: dict[tuple[arch, scale], InferenceSession]` avoids reload on repeated calls; different architectures for the same scale coexist without collision
 - **Graph optimization** — ORT_ENABLE_ALL fuses conv+bias+relu, optimizes memory layout
 
 ---
@@ -192,6 +196,7 @@ def _resolve_path(path_str: Union[str, Path]) -> Path:
 | **Typing** | mypy + py.typed | Strict | PEP 561 compliance |
 | **Testing** | pytest | ≥7.0 | Unit + integration |
 | **Formatting** | Black | Latest | Consistent style |
+| **MCP Server** | FastMCP + mcp | ≥1.0 | Model Context Protocol server (stdio) for agent integration |
 | **Export** | PyTorch + super-image | Dev only | Model → ONNX conversion |
 
 **Dependency Graph:**
@@ -222,14 +227,16 @@ packages = ["src/clarify"]
 ### Distribution Artifacts
 | Artifact | Size | Contents |
 |----------|------|----------|
-| `clarify_ai-0.2.0-py3-none-any.whl` | ~35 MB | Python code + 3 ONNX models |
-| `clarify_ai-0.2.0.tar.gz` | ~17 MB | Source only (models re-downloaded on build) |
+| `clarify_ai-0.4.0-py3-none-any.whl` | ~35 MB | Python code + bundled ONNX models |
+| `clarify_ai-0.4.0.tar.gz` | ~17 MB | Source only |
 
 ### Installation Methods
 | Method | Command | Use Case |
 |--------|---------|----------|
+| **PyPI (prod)** | `pip install clarify-ai` | Production, fastest |
+| **PyPI + MCP** | `pip install "clarify-ai[mcp]"` | Agent integration (Claude/Cursor) |
 | **Editable (dev)** | `pip install -e .[dev]` | Development, testing |
-| **Wheel (prod)** | `pip install clarify_ai-0.2.0-py3-none-any.whl` | Production, air-gapped |
+| **Wheel (air-gapped)** | `pip install clarify_ai-0.4.0-py3-none-any.whl` | Offline, air-gapped |
 | **Git dep** | `pip install git+https://github.com/...` | CI/CD, pinned versions |
 | **Vendor** | `cp -r src/clarify vendor/` | Zero-dependency embedding |
 
@@ -323,10 +330,10 @@ async def enhance_endpoint(file: UploadFile, scale: int = 2):
 python -m build
 
 # Transfer .whl to offline machine
-scp dist/clarify_ai-0.2.0-py3-none-any.whl offline-host:
+scp dist/clarify_ai-0.4.0-py3-none-any.whl offline-host:
 
 # Install offline
-pip install clarify_ai-0.2.0-py3-none-any.whl
+pip install clarify_ai-0.4.0-py3-none-any.whl
 # Works completely offline — models bundled
 ```
 
@@ -336,12 +343,63 @@ pip install clarify_ai-0.2.0-py3-none-any.whl
 
 | Extension Point | Current | Future |
 |-----------------|---------|--------|
-| **Models** | EDSR 2x/3x/4x | Real-ESRGAN, SwinIR, GFPGAN |
+| **Models** | SPAN, SRVGG Compact, RealPLSKR, EDSR Baseline | Real-ESRGAN full, SwinIR, INT8 quantized bundles |
 | **Providers** | CUDA, CoreML, CPU | TensorRT, DirectML, OpenVINO |
-| **Modes** | AI, Classical | Denoise, Deblur, Face Restore |
-| **Output** | PNG | JPEG (quality), WebP, TIFF |
+| **Modes** | AI, Classical, Denoise, Deblur, Face Restore | Async, concurrent batching |
+| **Output** | PNG, JPEG, WebP, TIFF | PDF, HEIC, AVIF |
 | **Batching** | Sequential | Async, concurrent.futures |
 | **Progress** | None | Callbacks, tqdm integration |
+| **Transport** | MCP stdio | Streamable HTTP, WebSocket |
+
+## MCP Server
+
+`clarify-ai` includes a Model Context Protocol (MCP) server (`clarify.mcp_server`) that exposes the local upscaler as tools for Claude Desktop, Cursor, and custom agent runtimes — no image data ever leaves your machine.
+
+### Entry Points
+
+- `clarify` — CLI (`clarify.cli:main`)
+- `clarify-mcp` — MCP stdio server (`clarify.mcp_server:main`)
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `upscale_image` | Enhance/upscale a local image with `arch`, `scale`, `mode`, `format`, `quality`, `strength` |
+| `health` | Runtime health: providers, bundled models, cache state, version |
+| `list_models` | All model architecture presets with metadata and bundling status |
+| `batch_upscale` | Enhance multiple images sequentially with per-item error reporting |
+
+### Claude Desktop Configuration
+
+```json
+{
+  "mcpServers": {
+    "clarify": {
+      "command": "python",
+      "args": ["-m", "clarify.mcp_server"]
+    }
+  }
+}
+```
+
+### Example Usage (via MCP client)
+
+```json
+{
+  "name": "upscale_image",
+  "arguments": {
+    "image_path": "/path/to/photo.jpg",
+    "scale": 2,
+    "arch": "span",
+    "mode": "ai",
+    "output_format": "png",
+    "quality": 95
+  }
+}
+```
+
+All inference runs locally via ONNX Runtime + OpenCV in an executor thread, keeping the async event loop responsive.
+
 
 ---
 
@@ -416,18 +474,22 @@ pip install clarify_ai-0.2.0-py3-none-any.whl
 
 | File | Purpose |
 |------|---------|
-| `src/clarify/__init__.py` | Public exports, version |
-| `src/clarify/core.py` | Enhancement logic, path resolution, model caching, inference |
-| `src/clarify/cli.py` | CLI entry point (`clarify` command) |
-| `src/clarify/exceptions.py` | Custom exception hierarchy |
+| `src/clarify/__init__.py` | Public exports: `enhance`, `health_check`, `MODEL_PRESETS`, `ModelArch`, version |
+| `src/clarify/core.py` | Enhancement logic, path resolution, model registry, per-(arch, scale) session caching, inference, health check |
+| `src/clarify/cli.py` | CLI entry point (`clarify` command) with `--arch` flag |
+| `src/clarify/mcp_server.py` | MCP stdio server: `upscale_image`, `health`, `list_models`, `batch_upscale` |
+| `src/clarify/exceptions.py` | Enterprise exception hierarchy with error codes + context |
 | `src/clarify/py.typed` | PEP 561 marker |
-| `src/clarify/models/` | Bundled ONNX models (edsr_x2/x3/x4.onnx) |
-| `tools/export_edsr_onnx.py` | PyTorch → ONNX export script |
+| `src/clarify/models/` | Bundled ONNX models: `span_x2.onnx`, `realesr-general-x4v3.onnx`, `realplskr_x4.onnx`, `edsr_x2.onnx`, `gfpgan_v1_4.onnx` (optional) |
+| `tools/export_span_onnx.py` | PyTorch → ONNX export for SPAN (build-time only) |
+| `tools/export_srvgg_onnx.py` | PyTorch → ONNX export for SRVGGNet Compact (build-time only) |
+| `tools/export_realplskr_onnx.py` | PyTorch → ONNX export for RealPLSKR (build-time only) |
+| `tools/export_gfpgan_onnx.py` | PyTorch → ONNX export for GFPGAN (build-time only) |
 | `tools/benchmark.py` | Performance benchmarking |
-| `tests/test_clarify.py` | Comprehensive test suite |
-| `.github/workflows/ci.yml` | CI: test matrix + mypy type checking |
-| `pyproject.toml` | Build config (hatchling), dependencies, metadata |
+| `tests/test_clarify.py` | Test suite |
+| `.github/workflows/ci.yml` | CI: test matrix + mypy type checking + ruff linting |
+| `pyproject.toml` | Build config (hatchling), dependencies, metadata, version 0.4.0 |
 
 ---
 
-*Document version: 1.0 | Project: clarify-ai | License: MIT*
+*Document version: 2.0 | Project: clarify-ai | License: MIT | Model registry: SPAN + SRVGG Compact + RealPLSKR + EDSR Baseline | MCP server included*

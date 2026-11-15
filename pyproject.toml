@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clarify-ai"
-version = "0.3.0"
-description = "Lightning-fast, lightweight AI image upscaling via ONNX Runtime & OpenCV."
+version = "0.4.0"
+description = "Enterprise-grade, local-first AI image super-resolution and enhancement via ONNX Runtime & OpenCV — sub-50 MB, zero PyTorch."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -18,6 +18,8 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Graphics",
     "Topic :: Scientific/Engineering :: Image Processing",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
 ]
 dependencies = [
     "numpy>=1.22.0",
