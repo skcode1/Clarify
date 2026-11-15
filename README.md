@@ -2,9 +2,9 @@
 
 # clarify-ai
 
-**Zero-config AI image enhancement and super-resolution for Python — run locally, no PyPI required.**
+**Zero-config AI image enhancement and super-resolution for Python — run locally.**
 
-One function call. No PyPI. No internet after clone for default models. Sub-50 MB footprint.
+One function call. No internet after clone for default models. Sub-50 MB footprint.
 
 </div>
 
@@ -85,9 +85,15 @@ Baseline mode uses direct full-image inference and is lightweight enough for mos
 
 ## Install & Use
 
-Because `clarify-ai` is not published on PyPI, install it directly from GitHub:
+Install `clarify-ai` from PyPI (recommended) or directly from GitHub:
 
-### 1. Direct Git install (most common)
+### 1. Install from PyPI (recommended)
+
+```bash
+pip install clarify-ai
+```
+
+### 2. Direct Git install
 
 ```bash
 pip install git+https://github.com/skcode1/Clarify.git
