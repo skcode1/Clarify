@@ -38,7 +38,6 @@ from clarify.core import (
     DEFAULT_ARCH,
     DEFAULT_SCALE,
     MODEL_PRESETS,
-    ModelArch,
     enhance,
     health_check,
 )
@@ -220,7 +219,7 @@ async def batch_upscale(
             resolved = _validate_inputs(image_path, scale, mode, output_format, arch)
             loop = asyncio.get_running_loop()
 
-            def _run_enhance() -> Path:
+            def _run_enhance(resolved: Path = resolved) -> Path:
                 return enhance(
                     image=str(resolved),
                     mode=mode,

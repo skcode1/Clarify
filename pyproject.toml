@@ -44,6 +44,8 @@ packages = ["src/clarify"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 ignore = ["UP007", "UP045"]
 
 [tool.hatch.build.targets.wheel.shared-data]
