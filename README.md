@@ -1,8 +1,8 @@
 <div align="center">
 
-# clarify-ai
+# clarify-ai-mcp
 
-**Zero-config AI image upscaler and enhancement engine for Python — run locally.**
+**Zero-config AI image upscaler and enhancement engine for Python — run locally (MCP / modernized branch).**
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square" alt="Python Version">
@@ -11,7 +11,8 @@
   <a href="https://mypy-lang.org/">
     <img src="https://img.shields.io/badge/mypy-checked-blue.svg?style=flat-square" alt="Mypy">
   </a>
-  <img src="https://img.shields.io/badge/PyPI-clarify--ai-blue.svg?style=flat-square" alt="PyPI Package">
+  <img src="https://img.shields.io/badge/branch-MCP-green?style=flat-square" alt="MCP Branch">
+  <img src="https://img.shields.io/badge/PyPI-clarify--ai--mcp-blue.svg?style=flat-square" alt="PyPI Package">
   <img src="https://img.shields.io/badge/version-0.4.0-purple.svg?style=flat-square" alt="Version">
 </p>
 
@@ -31,6 +32,8 @@ No manual model configuration. No tensor manipulation. No complicated image-proc
 </div>
 
 > **Branch context:** This is the `MCP` / modern-optimized branch of clarify-ai. It supersedes the `main` branch (which ships EDSR Baseline + Full models as fixed weights) with a pluggable model registry (SPAN default, SRVGGNet Compact, RealPLSKR HQ tier, EDSR Baseline legacy), an MCP server for agent integration, enterprise error codes, and a health check. Use this branch for production deployments that want sub-10 MB footprints, real-world JPEG/noise cleanup, and Claude Desktop / Cursor agent access.
+
+> **Important:** Replace `<this-repository-url>` below with the URL of **this MCP/modernized branch** — **not** the `main` branch (which still uses the legacy EDSR-only engineering). Cloning `main` will give you the old EDSR Baseline models, not the pluggable registry described here.
 
 ---
 
@@ -106,24 +109,35 @@ my-project/
 
 ## 🚀 Quick Install
 
-### Option 1: Install from PyPI (Recommended)
+### ⚠️ Important — Independent project (separate from main branch)
+
+This README describes the **MCP / modernized branch** of clarify-ai. The `main` branch is a separate, already-published project on PyPI as `clarify-ai` (legacy EDSR Baseline + Full architecture). **`pip install clarify-ai` will install the OLD main-branch version — not this one.**
+
+To install **this optimized MCP branch** specifically, use one of the options below.
+
+### Option 1: Install from PyPI (if this branch is published as `clarify-ai-mcp`)
 
 ```bash
-pip install clarify-ai
+pip install clarify-ai-mcp
 
 # With MCP server support (for Claude Desktop / Cursor / agents)
-pip install "clarify-ai[mcp]"
+pip install "clarify-ai-mcp[mcp]"
 
 # With GPU acceleration (NVIDIA)
-pip install "clarify-ai[gpu]"
+pip install "clarify-ai-mcp[gpu]"
 ```
 
-### Option 2: Clone & Install (Recommended for development)
+> Until this branch is published to PyPI as `clarify-ai-mcp`, use Option 2, 3, or 5 to install directly from this repository.
+
+### Option 2: Clone & Install this branch (Recommended for development)
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/clarify.git
+# Clone THIS repository (MCP / modernized branch)
+git clone <this-repository-url>
 cd clarify
+
+# Checkout the MCP branch if not already on it
+git checkout MCP
 
 # Create virtual environment
 python -m venv .venv
@@ -134,11 +148,14 @@ source .venv/bin/activate  # Linux/macOS
 pip install -e ".[dev]"
 ```
 
-### Option 2: Clone & Use Directly (No Install)
+### Option 3: Clone & Use Directly (No Install)
 
 ```bash
-git clone https://github.com/your-username/clarify.git
+# Clone THIS repository (MCP / modernized branch)
+git clone <this-repository-url>
 cd clarify
+git checkout MCP
+
 python -m venv .venv
 source .venv/bin/activate
 pip install numpy opencv-python-headless onnxruntime pillow
@@ -147,14 +164,17 @@ pip install numpy opencv-python-headless onnxruntime pillow
 PYTHONPATH=src python -c "from clarify import enhance; print('Ready!')"
 ```
 
-### Option 3: Vendor into Your Project
+### Option 4: Vendor into Your Project
 
-Copy the `src/clarify` directory into your project:
+Copy the `src/clarify` directory from THIS branch into your project:
 
 ```bash
 # In your project root
-git clone https://github.com/your-username/clarify.git clarify-temp
-cp -r clarify-temp/src/clarify ./vendor/
+git clone <this-repository-url> clarify-temp
+cd clarify-temp
+git checkout MCP
+cp -r src/clarify ./vendor/
+cd ..
 rm -rf clarify-temp
 ```
 
@@ -167,17 +187,22 @@ from clarify import enhance
 enhance("photo.jpg")
 ```
 
-### Option 4: Build & Install Wheel (Air-gapped Environments)
+### Option 5: Build & Install Wheel (Air-gapped Environments)
 
 ```bash
-git clone https://github.com/your-username/clarify.git
+# Clone THIS repository (MCP / modernized branch)
+git clone <this-repository-url>
 cd clarify
+git checkout MCP
+
 pip install build
-python -m build  # Creates dist/clarify_ai-0.4.0-py3-none-any.whl
+python -m build  # Creates dist/clarify_ai_mcp-0.4.0-py3-none-any.whl
 
 # Copy .whl to target machine and install
-pip install clarify_ai-0.4.0-py3-none-any.whl
+pip install clarify_ai_mcp-0.4.0-py3-none-any.whl
 ```
+
+---
 
 ---
 
@@ -185,10 +210,10 @@ pip install clarify_ai-0.4.0-py3-none-any.whl
 
 ```bash
 # Test import
-python -c "from clarify import enhance; print('clarify-ai ready!')"
+python -c "from clarify import enhance; print('clarify-ai-mcp ready!')"
 
-# Test CLI
-clarify --help
+# Test CLI (entry point: clarify-mcp)
+clarify-mcp --help
 
 # Quick enhancement test
 python -c "
@@ -361,32 +386,32 @@ for img in images:
 
 ## 💻 Command-Line Interface
 
-The `clarify` command is available after `pip install -e .` or when running with `PYTHONPATH=src`.
+The `clarify-mcp` command is available after `pip install -e .` or when running with `PYTHONPATH=src`.
 
 ```bash
 # Basic AI enhancement (2x, PNG output)
-clarify photo.jpg
+clarify-mcp photo.jpg
 
 # 4x AI upscaling
-clarify photo.jpg --scale 4
+clarify-mcp photo.jpg --scale 4
 
 # Classical enhancement (no upscaling)
-clarify photo.jpg --mode classical
+clarify-mcp photo.jpg --mode classical
 
 # Denoise an image to JPEG
-clarify noisy.jpg --mode denoise --format jpeg --quality 90
+clarify-mcp noisy.jpg --mode denoise --format jpeg --quality 90
 
 # Deblur to TIFF
-clarify blurry.jpg --mode deblur --strength 1.2 -f tiff
+clarify-mcp blurry.jpg --mode deblur --strength 1.2 -f tiff
 
 # Face restore to high-quality WebP
-clarify portrait.png --mode face_restore -f webp -q 95
+clarify-mcp portrait.png --mode face_restore -f webp -q 95
 
 # Custom output
-clarify photo.jpg --scale 2 --output exports/enhanced.png
+clarify-mcp photo.jpg --scale 2 --output exports/enhanced.png
 
 # Help
-clarify --help
+clarify-mcp --help
 ```
 
 ### CLI Arguments
@@ -419,14 +444,14 @@ pip install -e ".[mcp]"
 ```
 
 This registers two entry points:
-- `clarify` — the existing CLI (`clarify.cli:main`)
-- `clarify-mcp` — the MCP stdio server (`clarify.mcp_server:main`)
+- `clarify-mcp` — the CLI (`clarify.cli:main`)
+- `clarify-mcp-server` — the MCP stdio server (`clarify.mcp_server:main`)
 
 ### Run the server
 
 ```bash
-# Via installed entry point
-clarify-mcp
+# Via installed entry point (MCP server)
+clarify-mcp-server
 
 # Or directly from source
 python -m clarify.mcp_server
@@ -753,7 +778,7 @@ Input Image → Path Resolution → Hardware Selector → ONNX Model (arch-aware
 ### Setup
 
 ```bash
-git clone https://github.com/your-username/clarify.git
+git clone <this-repository-url>
 cd clarify
 
 python -m venv .venv
@@ -848,20 +873,20 @@ pytest --cov=clarify --cov-report=term-missing
 ```bash
 # Option 1: Shared wheel (build once, distribute .whl)
 python -m build
-# Share dist/clarify_ai-0.3.0-py3-none-any.whl
-pip install clarify_ai-0.3.0-py3-none-any.whl
+# Share dist/clarify_ai_mcp-0.4.0-py3-none-any.whl
+pip install clarify_ai_mcp-0.4.0-py3-none-any.whl
 
 # Option 2: Git dependency (pip install from repo)
-pip install git+https://github.com/your-username/clarify.git
+pip install git+<this-repository-url>
 
 # Option 3: Git submodule
-git submodule add https://github.com/your-username/clarify.git vendor/clarify
+git submodule add <this-repository-url> vendor/clarify
 # Then: pip install -e vendor/clarify
 ```
 
 ### For End Users (Non-developers)
 
-1. **Pre-built wheel** — Send them the `.whl` file, they run `pip install clarify_ai-0.3.0-py3-none-any.whl`
+1. **Pre-built wheel** — Send them the `.whl` file, they run `pip install clarify_ai_mcp-0.4.0-py3-none-any.whl`
 2. **Standalone script** — Vendor `src/clarify` into your app, no install needed
 3. **Docker** — Create a container with the package pre-installed
 

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "clarify-ai"
+name = "clarify-ai-mcp"
 version = "0.4.0"
-description = "Enterprise-grade, local-first AI image super-resolution and enhancement via ONNX Runtime & OpenCV — sub-50 MB, zero PyTorch."
+description = "Enterprise-grade, local-first AI image super-resolution and enhancement via ONNX Runtime & OpenCV — pluggable model registry (SPAN / SRVGG Compact / RealPLSKR), MCP server, sub-50 MB, zero PyTorch."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -36,8 +36,8 @@ mcp = ["mcp>=1.0.0,<2"]
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "mypy>=1.8.0", "ruff>=0.8.0", "build>=1.0.0", "twine>=4.0.0"]
 
 [project.scripts]
-clarify = "clarify.cli:main"
-clarify-mcp = "clarify.mcp_server:main"
+clarify-mcp = "clarify.cli:main"
+clarify-mcp-server = "clarify.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clarify"]
